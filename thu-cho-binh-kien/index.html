@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thu chợ Bình Kiến - bản chạy thử trên máy</title>
+<style>
+:root{--ink:#14262e;--mut:#5b6b72;--bg:#f4f6f7;--line:#d5dde0;--acc:#0f5c63;--warn:#a15c00;--bad:#b3261e;--ok:#1b6e3c}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--ink);color:#fff;padding:.6rem 1.2rem;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+header b{margin-right:auto}header button{background:none;border:0;color:#cfe3e6;font:inherit;cursor:pointer;padding:.3rem .5rem}
+header button.on{color:#fff;border-bottom:2px solid #fff}#opbar{background:#ffe9a8;border-bottom:2px solid #d9a400;padding:.5rem 1.2rem;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}#opbar label{font-weight:700}#opbar input{width:16rem;border-color:#a37a00}#opbar.empty input{border:2px solid var(--bad)}#opmsg{font-size:13px;color:#5b4500}
+main{max-width:1050px;margin:1.2rem auto;padding:0 1rem}h1{font-size:1.3rem;margin:.2rem 0 1rem}h2{font-size:1.05rem;margin:1.4rem 0 .5rem}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);margin-bottom:.6rem}
+th,td{padding:.4rem .6rem;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#e9eff1}
+.n{text-align:right;font-variant-numeric:tabular-nums}
+input,select{font:inherit;padding:.35rem .5rem;border:1px solid #9fb0b6;border-radius:4px;background:#fff;max-width:100%}
+button{font:inherit;padding:.4rem .9rem;border:0;border-radius:4px;background:var(--acc);color:#fff;cursor:pointer}
+button.sec{background:#fff;color:var(--ink);border:1px solid #9fb0b6}button:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+form.inline,.inline{display:flex;flex-wrap:wrap;gap:.5rem;align-items:end;margin:.5rem 0}
+.inline label{display:flex;flex-direction:column;font-size:13px;color:var(--mut)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.mut{color:var(--mut)}
+tr.err td{background:#fdecea}tr.gap td{background:#fff3d6}tfoot td{font-weight:700;background:#e9eff1}
+.note{background:#fff3d6;border:1px solid #e0b252;padding:.5rem .8rem;margin-bottom:1rem}
+a{color:var(--acc);cursor:pointer;text-decoration:underline}
+details{background:#fff;border:1px solid var(--line);margin-bottom:.5rem;padding:.2rem .9rem}summary{cursor:pointer;font-weight:600;padding:.4rem 0}details ol,details ul{margin:.2rem 0 .8rem;padding-left:1.3rem}details li{margin:.25rem 0}details p{margin:.3rem 0 .8rem}
+</style></head><body>
+<header><b>Thu chợ - Bình Kiến (bản chạy thử trên máy)</b>
+<button data-v="home">Tổng quan</button><button data-v="markets">Chợ và nguồn thu</button>
+<button data-v="sheets">Bảng kê</button><button data-v="seri">Theo dõi seri</button><button data-v="backup">Sao lưu</button><button data-v="guide">Hướng dẫn</button>
+</header>
+<div id="opbar"><label for="op">Người đang thao tác:</label> <input id="op" placeholder="Gõ họ tên của bạn vào đây" autocomplete="off"> <span id="opmsg"></span></div>
+<main id="app"></main>
+<script>
+const KEY='thuChoBinhKien_v1';
+const fresh=()=>({seq:1,op:'',markets:[],sources:[],dens:[],sheets:[],log:[]});
+let D;try{D=JSON.parse(localStorage.getItem(KEY))||fresh()}catch(e){D=fresh()}
+let V={view:'home',mid:null,sid:null,draft:null,fm:''};
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){alert('Trình duyệt không cho lưu dữ liệu. Hãy mở file bằng Chrome hoặc Edge.')}};
+const nid=()=>D.seq++;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const vnd=n=>Number(n).toLocaleString('vi-VN'), int=v=>{v=String(v).trim();return /^\d+$/.test(v)?+v:null};
+const log=(a,t)=>D.log.push({at:new Date().toISOString(),op:D.op,a,t});
+const mk=i=>D.markets.find(m=>m.id===i), src=i=>D.sources.find(s=>s.id===i), den=i=>D.dens.find(d=>d.id===i);
+const KINDS={confirmed:'Thực thu đã xác nhận',handover:'Bàn giao tiền',deposit:'Nộp tiền'};
+function need(){if(!D.op.trim()){alert('Hãy gõ họ tên của bạn vào ô "Người đang thao tác" (thanh màu vàng ở đầu trang) trước.');return false}return true}
+function stat(s){const rec=s.lines.reduce((t,l)=>t+l.amt,0),ev=k=>s.events.filter(e=>e.kind===k);
+ const c=ev('confirmed').pop();return{rec,conf:c?c.amt:null,hand:ev('handover').reduce((t,e)=>t+e.amt,0),dep:ev('deposit').reduce((t,e)=>t+e.amt,0)}}
+function conflicts(mid,d,a,b){const r=[];D.sheets.filter(s=>s.marketId===mid).forEach(s=>s.lines.forEach(l=>{
+ if(l.denId===d&&l.a<=b&&a<=l.b)r.push(`${l.a}-${l.b} (bảng kê #${s.id})`)}));return r}
+const go=(v,x={})=>{Object.assign(V,{view:v,mid:null,sid:null,imp:null,xi:null},x);render()};
+const A={
+ addMarket(f){if(!need())return false;const c=f.code.value.trim();if(D.markets.some(m=>m.code===c)){alert('Mã chợ đã tồn tại');return false}
+  D.markets.push({id:nid(),code:c,name:f.name.value.trim(),address:f.address.value.trim(),active:true});log('Thêm chợ',c);save();render();return false},
+ toggle(i){if(!need())return;const m=mk(i);m.active=!m.active;log('Đổi tình trạng chợ',m.code);save();render()},
+ addSource(f,mid){if(!need())return false;const c=f.code.value.trim();if(D.sources.some(s=>s.marketId===mid&&s.code===c)){alert('Mã nguồn thu đã có trong chợ này');return false}
+  D.sources.push({id:nid(),marketId:mid,code:c,name:f.name.value.trim(),kind:f.kind.value.trim()});log('Thêm nguồn thu',c);save();render();return false},
+ addDen(f,sid){if(!need())return false;const v=int(f.face.value);if(!v||D.dens.some(d=>d.sourceId===sid&&d.face===v)){alert('Mệnh giá không hợp lệ hoặc đã có');return false}
+  D.dens.push({id:nid(),sourceId:sid,label:f.label.value.trim(),face:v});log('Thêm loại phiếu',v);save();render();return false},
+ newSheet(sid){V.draft={sourceId:sid,collector:D.op,from:'',to:'',rows:[{den:'',book:'',a:'',b:''}]};go('entry',{draft:V.draft})},
+ row(i,k,v){V.draft.rows[i][k]=v;A.refresh()},
+ addRow(){V.draft.rows.push({den:'',book:'',a:'',b:''});render()},
+ delRow(i){V.draft.rows.splice(i,1);if(!V.draft.rows.length)V.draft.rows.push({den:'',book:'',a:'',b:''});render()},
+ evalRow(i){const r=V.draft.rows[i],s=src(V.draft.sourceId),d=den(+r.den),a=int(r.a),b=int(r.b);
+  if(!r.den&&r.a===''&&r.b==='')return{m:'Chưa nhập',c:'mut'};
+  if(!d)return{m:'Chọn loại phiếu',c:'bad'};if(a===null||b===null||a<1)return{m:'Nhập seri đầu và seri cuối',c:'bad'};
+  if(b<a)return{m:'Seri cuối phải lớn hơn hoặc bằng seri đầu',c:'bad'};
+  const cf=conflicts(s.marketId,d.id,a,b);if(cf.length)return{m:'Trùng seri đã nhập: '+cf.join(', '),c:'bad'};
+  for(let j=0;j<V.draft.rows.length;j++){if(j===i)continue;const o=V.draft.rows[j];
+   if(+o.den===d.id&&int(o.a)!==null&&int(o.b)!==null&&int(o.a)<=b&&a<=int(o.b))return{m:`Trùng seri với dòng ${j+1} của bảng kê này`,c:'bad'}}
+  return{m:'Hợp lệ',c:'ok',ok:true,qty:b-a+1,amt:(b-a+1)*d.face,d,a,b}},
+ refresh(){let tq=0,ta=0,all=true;V.draft.rows.forEach((r,i)=>{const e=A.evalRow(i),tr=document.getElementById('r'+i);
+  tr.className=e.c==='bad'?'err':'';const m=document.getElementById('m'+i);m.textContent=e.m;m.className=e.c;
+  document.getElementById('q'+i).textContent=e.ok?vnd(e.qty):'0';document.getElementById('a'+i).textContent=e.ok?vnd(e.amt):'0';
+  if(e.ok){tq+=e.qty;ta+=e.amt}else all=false});
+  document.getElementById('tq').textContent=vnd(tq);document.getElementById('ta').textContent=vnd(ta);document.getElementById('save').disabled=!all},
+ saveSheet(){if(!need())return;const d=V.draft;if(!d.collector.trim()||!d.from||!d.to||d.to<d.from){alert('Nhập người thu và kỳ thu hợp lệ');return}
+  const ev=d.rows.map((r,i)=>A.evalRow(i));if(ev.some(e=>!e.ok)){alert('Còn dòng chưa hợp lệ');return}
+  const s={id:nid(),marketId:src(d.sourceId).marketId,sourceId:d.sourceId,collector:d.collector.trim(),from:d.from,to:d.to,createdBy:D.op,
+   lines:ev.map((e,i)=>({denId:e.d.id,face:e.d.face,book:d.rows[i].book.trim(),a:e.a,b:e.b,qty:e.qty,amt:e.amt})),events:[]};
+  D.sheets.push(s);log('Lập bảng kê','#'+s.id);save();V.draft=null;go('sheet',{sid:s.id})},
+ addEvent(f,sid){if(!need())return false;const s=D.sheets.find(x=>x.id===sid),st=stat(s),k=f.kind.value,amt=int(f.amount.value.replace(/\s|đồng|đ/gi,'').replace(/[.,]/g,''));let err='';
+  if(amt===null)err='Số tiền chưa hợp lệ: chỉ gõ số, ví dụ 4311000 hoặc 4.311.000';else if(!f.date.value)err='Chưa chọn ngày';
+  else if(k==='confirmed'&&s.createdBy.trim().toLowerCase()===D.op.trim().toLowerCase())err='Người lập bảng kê không tự xác nhận thực thu. Hãy đổi tên ở ô "Người đang thao tác" (thanh màu vàng ở đầu trang) sang người kiểm tra.';
+  else if(k==='confirmed'&&st.conf!==null)err='Bảng kê đã có xác nhận thực thu';
+  else if(k!=='confirmed'&&st.conf===null)err='Cần xác nhận thực thu trước';
+  else if(k!=='confirmed'&&(k==='handover'?st.hand:st.dep)+amt>st.conf)err='Tổng số tiền vượt quá số thực thu đã xác nhận';
+  if(err){const e=document.getElementById('evmsg');if(e)e.textContent=err;alert(err);return false}
+  s.events.push({kind:k,amt,date:f.date.value,ref:f.ref.value.trim(),note:f.note.value.trim(),by:D.op});log(KINDS[k],'#'+sid+': '+amt);save();render();return false},
+ csv(){const rows=[['Bảng kê','Chợ','Nguồn thu','Từ ngày','Đến ngày','Người thu','Mệnh giá','Quyển','Từ seri','Đến seri','Số phiếu','Thành tiền']];
+  D.sheets.forEach(s=>s.lines.forEach(l=>rows.push([s.id,mk(s.marketId).name,src(s.sourceId).name,s.from,s.to,s.collector,l.face,l.book,l.a,l.b,l.qty,l.amt])));
+  dl('bang-ke.csv','\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv')},
+ backup(){dl('sao-luu-thu-cho-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(D),'application/json')},
+ restore(inp){const f=inp.files[0];if(!f)return;f.text().then(t=>{try{const x=JSON.parse(t);if(!x.markets||!x.sheets)throw 0;
+  if(confirm('Thay toàn bộ dữ liệu hiện tại bằng file sao lưu này?')){D=x;save();render()}}catch(e){alert('File sao lưu không hợp lệ')}})},
+ reset(){if(confirm('Xóa toàn bộ dữ liệu trên máy này? Hãy sao lưu trước.')){D=fresh();save();render()}}
+};
+function dl(n,t,m){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:m}));a.download=n;a.click()}
+const sel=(id,opts,v)=>`<select id="${id}" onchange="V.${id}=this.value;render()">${opts}</select>`;
+function home(){const ms=D.markets.filter(m=>!V.fm||m.id==V.fm);let T={n:0,rec:0,conf:0,hand:0,dep:0},rows='',todo='';
+ ms.forEach(m=>{let t={n:0,rec:0,conf:0,hand:0,dep:0};D.sheets.filter(s=>s.marketId===m.id).forEach(s=>{const x=stat(s);t.n++;t.rec+=x.rec;t.conf+=x.conf||0;t.hand+=x.hand;t.dep+=x.dep;
+  if(x.conf===null)todo+=`<tr><td><a onclick="go('sheet',{sid:${s.id}})">#${s.id}</a></td><td>${esc(m.name)}</td><td class="warn">Chưa xác nhận thực thu</td></tr>`;
+  else if(x.conf!==x.rec)todo+=`<tr><td><a onclick="go('sheet',{sid:${s.id}})">#${s.id}</a></td><td>${esc(m.name)}</td><td class="bad">Chênh lệch ${vnd(x.conf-x.rec)} đ</td></tr>`;
+  else if(x.dep<x.conf)todo+=`<tr><td><a onclick="go('sheet',{sid:${s.id}})">#${s.id}</a></td><td>${esc(m.name)}</td><td class="warn">Còn phải nộp ${vnd(x.conf-x.dep)} đ</td></tr>`});
+  for(const k in T)T[k]+=t[k];rows+=`<tr><td>${esc(m.name)}</td><td class="n">${t.n}</td><td class="n">${vnd(t.rec)}</td><td class="n">${vnd(t.conf)}</td><td class="n">${vnd(t.hand)}</td><td class="n">${vnd(t.dep)}</td></tr>`});
+ return `<h1>Tổng quan</h1><div class="inline"><label>Chợ<select onchange="V.fm=this.value;render()"><option value="">Toàn Trung tâm</option>${D.markets.map(m=>`<option value="${m.id}" ${V.fm==m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div>
+ <p class="mut">Ghi nhận theo bảng kê chưa phải số đã thực thu. Số thực thu chỉ tính các bảng kê đã được xác nhận.</p>
+ <table><tr><th>Chợ</th><th class="n">Bảng kê</th><th class="n">Ghi nhận</th><th class="n">Thực thu xác nhận</th><th class="n">Đã bàn giao</th><th class="n">Đã nộp</th></tr>${rows||'<tr><td colspan="6" class="mut">Chưa có chợ.</td></tr>'}
+ <tfoot><tr><td>Tổng cộng</td><td class="n">${T.n}</td><td class="n">${vnd(T.rec)}</td><td class="n">${vnd(T.conf)}</td><td class="n">${vnd(T.hand)}</td><td class="n">${vnd(T.dep)}</td></tr></tfoot></table>
+ <h2>Cần xử lý</h2><table>${todo||'<tr><td class="mut">Không có bảng kê nào cần xử lý.</td></tr>'}</table>`}
+function markets(){if(V.mid){const m=mk(V.mid),ss=D.sources.filter(s=>s.marketId===m.id);
+ return `<h1>${esc(m.name)} <small class="mut">(${esc(m.code)})</small></h1><p><a onclick="go('markets')">Quay lại danh sách chợ</a> | ${m.active?'Đang hoạt động':'Ngừng sử dụng'}
+ <button class="sec" onclick="A.toggle(${m.id})">${m.active?'Ngừng sử dụng chợ':'Dùng lại chợ'}</button></p><h2>Nguồn thu và loại phiếu</h2>
+ ${ss.map(s=>`<table><tr><th colspan="2">${esc(s.code)} - ${esc(s.name)} <span class="mut">${esc(s.kind||'')}</span>
+ ${m.active?`<button style="float:right" onclick="A.newSheet(${s.id})">Nhập bảng kê</button>`:''}</th></tr>
+ ${D.dens.filter(d=>d.sourceId===s.id).sort((a,b)=>a.face-b.face).map(d=>`<tr><td>${esc(d.label)}</td><td class="n">${vnd(d.face)} đ</td></tr>`).join('')||'<tr><td colspan="2" class="mut">Chưa khai báo loại phiếu.</td></tr>'}</table>
+ <form class="inline" onsubmit="return A.addDen(this,${s.id})"><label>Tên loại phiếu<input name="label" required placeholder="Phiếu 2.000 đồng"></label><label>Mệnh giá (đồng)<input name="face" type="number" min="1" required></label><button class="sec">Thêm loại phiếu</button></form>`).join('')||'<p class="mut">Chợ này chưa có nguồn thu.</p>'}
+ <h2>Thêm nguồn thu</h2><form class="inline" onsubmit="return A.addSource(this,${m.id})"><label>Mã<input name="code" required></label><label>Tên nguồn thu<input name="name" required></label><label>Loại dịch vụ<input name="kind"></label><button>Thêm nguồn thu</button></form>
+ <h2>Tải nhiều nguồn thu từ file Excel</h2><p class="mut">File .xlsx, mỗi dòng một nguồn thu. Có thể kèm cột loại phiếu và mệnh giá (một nguồn thu nhiều mệnh giá thì viết nhiều dòng cùng mã). Mã nguồn thu đã có sẽ không bị ghi đè.</p>
+ <input type="file" accept=".xlsx" onchange="A.xl(this,${m.id})">${V.imp&&V.imp.mid===m.id?impPanel():''}`}
+ return `<h1>Chợ và nguồn thu</h1><table><tr><th>Mã</th><th>Tên chợ</th><th>Địa chỉ</th><th>Tình trạng</th></tr>
+ ${D.markets.map(m=>`<tr><td>${esc(m.code)}</td><td><a onclick="go('markets',{mid:${m.id}})">${esc(m.name)}</a></td><td>${esc(m.address)}</td><td>${m.active?'Đang hoạt động':'Ngừng sử dụng'}</td></tr>`).join('')||'<tr><td colspan="4" class="mut">Chưa có chợ. Thêm chợ đầu tiên ở bên dưới.</td></tr>'}</table>
+ <h2>Thêm chợ</h2><form class="inline" onsubmit="return A.addMarket(this)"><label>Mã chợ<input name="code" required></label><label>Tên chợ<input name="name" required></label><label>Địa chỉ<input name="address"></label><button>Thêm chợ</button></form>`}
+function entry(){const d=V.draft,s=src(d.sourceId),ds=D.dens.filter(x=>x.sourceId===s.id).sort((a,b)=>a.face-b.face);
+ if(!ds.length)return `<h1>Nhập bảng kê</h1><p class="bad">Nguồn thu chưa có loại phiếu. Hãy khai báo mệnh giá trước.</p><a onclick="go('markets',{mid:${s.marketId}})">Quay lại</a>`;
+ return `<h1>Nhập bảng kê - ${esc(mk(s.marketId).name)} / ${esc(s.name)}</h1><div class="inline">
+ <label>Người thu tiền<input value="${esc(d.collector)}" oninput="V.draft.collector=this.value"></label><label>Từ ngày<input type="date" value="${d.from}" oninput="V.draft.from=this.value"></label><label>Đến ngày<input type="date" value="${d.to}" oninput="V.draft.to=this.value"></label></div>
+ <table><thead><tr><th>Loại phiếu</th><th>Quyển số</th><th>Từ seri</th><th>Đến seri</th><th class="n">Số phiếu</th><th class="n">Thành tiền</th><th>Kiểm tra</th><th></th></tr></thead><tbody>
+ ${d.rows.map((r,i)=>`<tr id="r${i}"><td><select onchange="A.row(${i},'den',this.value)"><option value="">Chọn</option>${ds.map(x=>`<option value="${x.id}" ${+r.den===x.id?'selected':''}>${esc(x.label)} (${vnd(x.face)}đ)</option>`).join('')}</select></td>
+ <td><input size="12" value="${esc(r.book)}" oninput="A.row(${i},'book',this.value)"></td><td><input type="number" min="1" style="width:8rem" value="${esc(r.a)}" oninput="A.row(${i},'a',this.value)"></td>
+ <td><input type="number" min="1" style="width:8rem" value="${esc(r.b)}" oninput="A.row(${i},'b',this.value)"></td><td class="n" id="q${i}">0</td><td class="n" id="a${i}">0</td><td id="m${i}" class="mut">Chưa nhập</td>
+ <td><button class="sec" onclick="A.delRow(${i})">Xóa</button></td></tr>`).join('')}</tbody>
+ <tfoot><tr><td colspan="4">Tổng cộng</td><td class="n" id="tq">0</td><td class="n" id="ta">0</td><td colspan="2"></td></tr></tfoot></table>
+ <p><button class="sec" onclick="A.addRow()">Thêm dòng</button> <button id="save" disabled onclick="A.saveSheet()">Lưu bảng kê</button>
+ <span class="mut">Seri chỉ cần khác nhau trong cùng loại phiếu; hai mệnh giá có thể dùng cùng số seri.</span></p>`}
+function sheets(){return `<h1>Bảng kê</h1><h2>Tải bảng kê từ Excel</h2>
+ <p class="mut">Chọn file .xlsx có các trang "BẢNG KÊ THU TIỀN ..." (mỗi trang một kỳ thu). Phần mềm tự nhận chợ, nguồn thu, kỳ thu, người thu, mệnh giá, quyển, seri; tự tính lại số phiếu và thành tiền từ seri; kiểm tra trùng seri rồi mới đưa vào bảng kê.</p>
+ <input type="file" accept=".xlsx" onchange="A.xb(this)">${V.xi?xiPanel():''}<h2>Danh sách bảng kê</h2><table><tr><th>Số</th><th>Chợ</th><th>Nguồn thu</th><th>Kỳ thu</th><th>Người thu</th><th class="n">Ghi nhận</th><th>Tình trạng</th></tr>
+ ${[...D.sheets].reverse().map(s=>{const x=stat(s);return `<tr><td><a onclick="go('sheet',{sid:${s.id}})">#${s.id}</a></td><td>${esc(mk(s.marketId).name)}</td><td>${esc(src(s.sourceId).name)}</td><td>${s.from} đến ${s.to}</td><td>${esc(s.collector)}</td><td class="n">${vnd(x.rec)}</td>
+ <td>${x.conf===null?'<span class="warn">Chưa xác nhận</span>':x.conf===x.rec?'<span class="ok">Khớp</span>':'<span class="bad">Chênh lệch</span>'}</td></tr>`}).join('')||'<tr><td colspan="7" class="mut">Chưa có bảng kê. Vào Chợ và nguồn thu để nhập bảng kê.</td></tr>'}</table>`}
+function sheet(){const s=D.sheets.find(x=>x.id===V.sid),x=stat(s);
+ return `<h1>Bảng kê #${s.id} - ${esc(mk(s.marketId).name)} / ${esc(src(s.sourceId).name)}</h1><p>Kỳ thu ${s.from} đến ${s.to}. Người thu: ${esc(s.collector)}. Lập bởi: ${esc(s.createdBy)}.</p>
+ <table><tr><th class="n">Mệnh giá</th><th>Quyển</th><th class="n">Từ seri</th><th class="n">Đến seri</th><th class="n">Số phiếu</th><th class="n">Thành tiền</th></tr>
+ ${s.lines.map(l=>`<tr><td class="n">${vnd(l.face)}</td><td>${esc(l.book)}</td><td class="n">${l.a}</td><td class="n">${l.b}</td><td class="n">${vnd(l.qty)}</td><td class="n">${vnd(l.amt)}</td></tr>`).join('')}
+ <tfoot><tr><td colspan="4">Tổng cộng</td><td class="n">${vnd(s.lines.reduce((t,l)=>t+l.qty,0))}</td><td class="n">${vnd(x.rec)}</td></tr></tfoot></table>
+ <h2>Tình trạng tiền</h2><table><tr><td>Ghi nhận theo bảng kê</td><td class="n">${vnd(x.rec)}</td><td></td></tr>
+ <tr><td>Thực thu đã xác nhận</td><td class="n">${x.conf===null?'-':vnd(x.conf)}</td><td>${x.conf===null?'<span class="warn">Chưa xác nhận thực thu</span>':x.conf===x.rec?'<span class="ok">Khớp bảng kê</span>':`<span class="bad">Chênh lệch ${vnd(x.conf-x.rec)} đ, cần giải trình</span>`}</td></tr>
+ <tr><td>Đã bàn giao</td><td class="n">${vnd(x.hand)}</td><td></td></tr><tr><td>Đã nộp</td><td class="n">${vnd(x.dep)}</td><td>${x.conf!==null&&x.dep<x.conf?`<span class="warn">Còn phải nộp ${vnd(x.conf-x.dep)} đ</span>`:''}</td></tr></table>
+ ${s.events.length?`<h2>Lịch sử ghi nhận</h2><table><tr><th>Ngày</th><th>Nội dung</th><th class="n">Số tiền</th><th>Chứng từ, ghi chú</th><th>Người ghi</th></tr>${s.events.map(e=>`<tr><td>${e.date}</td><td>${KINDS[e.kind]}</td><td class="n">${vnd(e.amt)}</td><td>${esc(e.ref)} ${esc(e.note)}</td><td>${esc(e.by)}</td></tr>`).join('')}</table>`:''}
+ <p class="note">Đang ghi nhận với tên: <b id="evop">${esc(D.op)||'(chưa nhập)'}</b>. Muốn đổi sang người kiểm tra, sửa ô <b>Người đang thao tác</b> ở thanh màu vàng trên cùng trang.</p>
+ <p id="evmsg" class="bad"></p>
+ <form class="inline" onsubmit="return A.addEvent(this,${s.id})"><label>Nội dung<select name="kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+ <label>Số tiền (đồng)<input name="amount" inputmode="numeric" autocomplete="off" placeholder="4311000 hoặc 4.311.000" required></label><label>Ngày<input name="date" type="date" required></label><label>Số chứng từ<input name="ref"></label><label>Ghi chú<input name="note"></label><button>Ghi nhận</button></form>`}
+function backup(){return `<h1>Sao lưu và xuất dữ liệu</h1><div class="note">Dữ liệu lưu ngay trong trình duyệt của máy này. Xóa dữ liệu duyệt web hoặc đổi trình duyệt/máy sẽ không thấy dữ liệu. Hãy sao lưu thường xuyên.</div>
+ <p><button onclick="A.backup()">Tải file sao lưu (.json)</button> <button class="sec" onclick="A.csv()">Xuất bảng kê ra Excel (.csv)</button></p>
+ <h2>Khôi phục</h2><p><input type="file" accept=".json" onchange="A.restore(this)"></p><h2>Nhật ký thao tác</h2>
+ <table><tr><th>Thời gian</th><th>Người đang thao tác</th><th>Thao tác</th><th>Đối tượng</th></tr>${[...D.log].reverse().slice(0,50).map(l=>`<tr><td>${new Date(l.at).toLocaleString('vi-VN')}</td><td>${esc(l.op)}</td><td>${esc(l.a)}</td><td>${esc(l.t)}</td></tr>`).join('')||'<tr><td colspan="4" class="mut">Chưa có thao tác.</td></tr>'}</table>
+ <h2>Xóa dữ liệu</h2><button class="sec" onclick="A.reset()">Xóa toàn bộ dữ liệu trên máy này</button>`}
+
+/* ===== Đọc file .xlsx (không cần thư viện ngoài) ===== */
+async function inflate(u8){const ds=new DecompressionStream('deflate-raw'),w=ds.writable.getWriter();w.write(u8);w.close();return new Uint8Array(await new Response(ds.readable).arrayBuffer())}
+async function unzip(buf){const dv=new DataView(buf),u8=new Uint8Array(buf),dec=new TextDecoder(),out={};let e=-1;
+ for(let i=u8.length-22;i>=Math.max(0,u8.length-66000);i--)if(dv.getUint32(i,true)===0x06054b50){e=i;break}
+ if(e<0)throw new Error('Không phải file .xlsx hợp lệ');const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);
+ for(let i=0;i<n;i++){if(dv.getUint32(p,true)!==0x02014b50)throw new Error('File .xlsx bị lỗi');
+  const m=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),lo=dv.getUint32(p+42,true);
+  const name=dec.decode(u8.subarray(p+46,p+46+nl));p+=46+nl+xl+cl;
+  if(!/^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$/.test(name))continue;
+  const ds=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true),raw=u8.subarray(ds,ds+cs);out[name]=dec.decode(m===0?raw:await inflate(raw))}
+ return out}
+const unent=t=>t.replace(/&#x([0-9a-f]+);/gi,(_,h)=>String.fromCodePoint(parseInt(h,16))).replace(/&#(\d+);/g,(_,d)=>String.fromCodePoint(+d)).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+const attr=(t,n)=>{const m=new RegExp('\\s'+n+'="([^"]*)"').exec(t);return m?unent(m[1]):null};
+const texts=x=>[...x.replace(/<rPh[\s\S]*?<\/rPh>/g,'').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(m=>unent(m[1])).join('');
+async function readXlsx(file){if(file.size>8e6)throw new Error('File quá lớn (trên 8 MB)');
+ const z=await unzip(await file.arrayBuffer());if(!z['xl/workbook.xml'])throw new Error('Không phải file .xlsx hợp lệ');
+ const ss=z['xl/sharedStrings.xml']?[...z['xl/sharedStrings.xml'].matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m=>texts(m[1])):[],rel={};
+ for(const m of (z['xl/_rels/workbook.xml.rels']||'').matchAll(/<Relationship\b[^>]*>/g))rel[attr(m[0],'Id')]=attr(m[0],'Target');
+ const out=[];for(const m of z['xl/workbook.xml'].matchAll(/<sheet\b[^>]*>/g)){
+  const t=(rel[attr(m[0],'r:id')]||'').replace(/^\/?(xl\/)?/,'xl/'),x=z[t];if(!x)continue;const rows=[];
+  for(const c of x.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){const mm=/^([A-Z]+)(\d+)$/.exec(attr(c[1],'r')||'');if(!mm||c[2]===undefined)continue;
+   let col=0;for(const ch of mm[1])col=col*26+ch.charCodeAt(0)-64;col--;const ty=attr(c[1],'t');let v='';
+   if(ty==='inlineStr')v=texts(c[2]);else{const ve=/<v>([\s\S]*?)<\/v>/.exec(c[2]);v=ve?unent(ve[1]):'';if(ty==='s')v=ss[+v]??''}
+   (rows[+mm[2]-1]=rows[+mm[2]-1]||[])[col]=v}
+  out.push({name:attr(m[0],'name'),rows:Array.from(rows,r=>r||[])})}
+ return out}
+/* ===== Nhập nguồn thu từ Excel: chọn cột, xem trước, xác nhận ===== */
+const FIELDS=[['code','Mã nguồn thu',/mã/i],['name','Tên nguồn thu',/tên/i],['kind','Loại dịch vụ',/dịch vụ|khoản thu|loại thu/i],['label','Tên loại phiếu',/loại phiếu|tên phiếu|phiếu/i],['face','Mệnh giá',/mệnh giá|giá/i]];
+const colName=i=>{let s='';for(i++;i>0;i=Math.floor((i-1)/26))s=String.fromCharCode(65+(i-1)%26)+s;return s};
+Object.assign(A,{
+ async xl(inp,mid){const f=inp.files[0];if(!f)return;try{const sh=await readXlsx(f);if(!sh.length)throw new Error('File không có trang tính');V.imp={mid,sheets:sh,si:0,hdr:1,map:{}};A.guess();render()}catch(e){alert(e.message||'Không đọc được file')}},
+ guess(){const I=V.imp,hd=Array.from(I.sheets[I.si].rows[I.hdr-1]||[],h=>String(h??'')),used=new Set();I.map={};
+  FIELDS.forEach(([k,,re])=>{const i=hd.findIndex((h,j)=>!used.has(j)&&re.test(h));if(i>=0){I.map[k]=i;used.add(i)}})},
+ impSet(k,v){const I=V.imp;I[k]=+v;if(k==='hdr')I.hdr=Math.max(1,+v||1);A.guess();render()},
+ impMap(k,v){V.imp.map[k]=v===''?null:+v;render()},
+ impGo(){if(!need())return;const P=impPlan(),mid=V.imp.mid;let ns=0,nd=0;
+  P.items.forEach(it=>{if(it.st==='error')return;let s=D.sources.find(x=>x.marketId===mid&&x.code===it.code);
+   if(!s){s={id:nid(),marketId:mid,code:it.code,name:it.name,kind:it.kind};D.sources.push(s);ns++}
+   it.dens.forEach(d=>{if(!D.dens.some(x=>x.sourceId===s.id&&x.face===d.face)){D.dens.push({id:nid(),sourceId:s.id,label:d.label,face:d.face});nd++}})});
+  log('Nhập nguồn thu từ Excel',`${ns} nguồn thu, ${nd} loại phiếu`);save();V.imp=null;render();alert(`Đã nhập ${ns} nguồn thu mới và ${nd} loại phiếu mới.`)}
+});
+function impPlan(){const I=V.imp,rows=I.sheets[I.si].rows.slice(I.hdr),M=I.map,mid=I.mid,g={},items=[];
+ const val=(r,k)=>M[k]==null?'':String(r[M[k]]??'').trim();
+ rows.forEach((r,ri)=>{if(!r.some(c=>String(c??'').trim()))return;const code=val(r,'code'),line=I.hdr+ri+1;
+  if(!code){items.push({code:'(dòng '+line+')',name:val(r,'name'),dens:[],st:'error',msg:'Thiếu mã nguồn thu'});return}
+  let it=g[code];const ex=D.sources.find(x=>x.marketId===mid&&x.code===code);
+  if(!it){it=g[code]={code,name:val(r,'name'),kind:val(r,'kind'),dens:[],st:ex?'exists':'new',msg:ex?'Đã có, chỉ bổ sung loại phiếu mới':'Thêm mới'};items.push(it);
+   if(!ex&&!it.name){it.st='error';it.msg='Thiếu tên nguồn thu'}}
+  const fr=val(r,'face');if(fr){const n=int(fr.replace(/\.0+$/,'').replace(/(đồng|đ)$/i,'').replace(/[.,\s]/g,''));
+   if(!n||n<1){it.st='error';it.msg=`Mệnh giá không hợp lệ ở dòng ${line}: ${fr}`}
+   else if(!it.dens.some(d=>d.face===n))it.dens.push({face:n,label:val(r,'label')||'Phiếu '+vnd(n)+' đồng'})}});
+ return{items,ok:items.filter(i=>i.st!=='error').length}}
+function impPanel(){const I=V.imp,sh=I.sheets[I.si],hd=Array.from(sh.rows[I.hdr-1]||[]),P=impPlan();
+ const opt=k=>`<select onchange="A.impMap('${k}',this.value)"><option value="">(không dùng)</option>${hd.map((h,i)=>`<option value="${i}" ${I.map[k]===i?'selected':''}>Cột ${colName(i)}: ${esc(String(h??'').slice(0,24))}</option>`).join('')}</select>`;
+ return `<div class="note" style="margin-top:.8rem">Đã đọc file. Kiểm tra cột tương ứng, xem trước rồi bấm Nhập.</div><div class="inline">
+ <label>Trang tính<select onchange="A.impSet('si',this.value)">${I.sheets.map((x,i)=>`<option value="${i}" ${I.si===i?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+ <label>Dòng tiêu đề<input type="number" min="1" style="width:5rem" value="${I.hdr}" onchange="A.impSet('hdr',this.value)"></label>
+ ${FIELDS.map(f=>`<label>${f[1]}${opt(f[0])}</label>`).join('')}</div>
+ <table><tr><th>Mã</th><th>Tên nguồn thu</th><th>Loại dịch vụ</th><th>Loại phiếu</th><th>Kết quả</th></tr>
+ ${P.items.slice(0,60).map(i=>`<tr class="${i.st==='error'?'err':''}"><td>${esc(i.code)}</td><td>${esc(i.name)}</td><td>${esc(i.kind)}</td><td>${i.dens.map(d=>vnd(d.face)).join(', ')}</td>
+ <td class="${i.st==='error'?'bad':i.st==='new'?'ok':'warn'}">${esc(i.msg)}</td></tr>`).join('')||'<tr><td colspan="5" class="mut">Chưa có dòng dữ liệu. Kiểm tra dòng tiêu đề và cột đã chọn.</td></tr>'}</table>
+ <p><button ${P.ok?'':'disabled'} onclick="A.impGo()">Nhập ${P.ok} nguồn thu hợp lệ</button> <span class="mut">Dòng báo lỗi sẽ được bỏ qua.${P.items.length>60?' Chỉ hiển thị 60 dòng đầu.':''}</span></p>`}
+
+/* ===== Tải bảng kê từ Excel: tự nhận dạng mẫu "BẢNG KÊ THU TIỀN ..." ===== */
+const norm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().replace(/\s+/g,' ').trim();
+const flat=r=>(r||[]).map(c=>String(c??'')).join(' ').replace(/\s+/g,' ').trim();
+const cap=t=>t.charAt(0).toUpperCase()+t.slice(1).toLowerCase();
+function parseDates(t){const m=/NGÀY\s+(\d{1,2})(?:\s+THÁNG\s+(\d{1,2}))?(?:\s+ĐẾN\s+NGÀY\s+(\d{1,2})(?:\s+THÁNG\s+(\d{1,2}))?)?\s+THÁNG\s+(\d{1,2})\s+NĂM\s+(\d{4})/i.exec(t);if(!m)return null;
+ const y=+m[6],me=+m[5],ms=m[2]?+m[2]:me,d1=+m[1],d2=m[3]?+m[3]:d1,iso=(d,mo)=>{const dt=new Date(Date.UTC(y,mo-1,d));return dt.getUTCMonth()===mo-1&&dt.getUTCDate()===d?`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`:null};
+ const a=iso(d1,ms),b=iso(d2,me);return a&&b&&b>=a?{from:a,to:b}:null}
+function parseBK(sh){const R=sh.rows,top=R.slice(0,10).map(flat);let hi=-1,C={};
+ for(let i=0;i<Math.min(R.length,20)&&hi<0;i++){const c={};(R[i]||[]).forEach((v,j)=>{const n=norm(v);
+  if(/^tu (so|seri)/.test(n))c.a=j;else if(/^den (so|seri)/.test(n))c.b=j;else if(/quyen/.test(n))c.book=j;else if(/thanh tien/.test(n))c.amt=j;else if(/phieu|gia|menh/.test(n))c.price=j});
+  if(c.a!=null&&c.b!=null){hi=i;C=c}}
+ if(hi<0)return null;const title=top.find(t=>/BẢNG KÊ/i.test(t))||'',mt=top.find(t=>/QUẢN LÝ CHỢ/i.test(t))||'',ct=top.find(t=>/Người thu/i.test(t))||'';
+ const dt=parseDates(title)||{},sn=/BẢNG KÊ\s+(.+?)\s+NGÀY\s+\d/i.exec(title),mn=/CHỢ\s+(.+)$/i.exec(mt),cn=/Người thu(?: tiền)?\s*:\s*(.+)$/i.exec(ct);
+ const p={name:sh.name.trim(),from:dt.from||'',to:dt.to||'',collector:cn?cn[1].trim():'',marketName:mn?mn[1].trim():'',sourceName:sn?cap(sn[1].trim()):'',lines:[],errs:[],warns:[],calc:0,fileTotal:null};
+ for(let r=hi+1;r<R.length;r++){const row=R[r]||[];if(/^tổng/i.test(String(row[0]??'').trim())){const v=C.amt!=null?Number(row[C.amt]):NaN;p.fileTotal=Number.isFinite(v)?v:null;break}
+  const pc=String(row[C.price]??''),a=Number(row[C.a]),b=Number(row[C.b]);if(!pc.trim()&&row[C.a]==null&&row[C.b]==null)continue;
+  const pm=/(\d[\d.,]*)\s*đ/i.exec(pc),face=pm?int(pm[1].replace(/[.,]/g,'')):int(pc.replace(/[.,\s]/g,''));
+  if(!face){p.errs.push(`Dòng ${r+1}: không đọc được mệnh giá "${pc.trim()}"`);continue}
+  if(!Number.isInteger(a)||!Number.isInteger(b)||a<1||b<a){p.errs.push(`Dòng ${r+1}: seri không hợp lệ (${row[C.a]??''} đến ${row[C.b]??''})`);continue}
+  p.lines.push({row:r+1,face,book:String(row[C.book]??'').replace(/\s+/g,' ').trim(),a,b});p.calc+=(b-a+1)*face}
+ if(!p.lines.length&&!p.errs.length)return null;
+ if(p.fileTotal!==null&&p.fileTotal!==p.calc)p.warns.push(`Tổng cộng trong file (${vnd(p.fileTotal)}) khác tổng tính từ seri (${vnd(p.calc)}). Phần mềm dùng số tính từ seri`);return p}
+function xiPlan(){const X=V.xi,m=X.mSel==='new'?null:mk(+X.mSel),ss=m&&X.sSel!=='new'?src(+X.sSel):null,acc={},seen={};
+ return X.sheets.map((p,i)=>{const e=X.edits[i]||{},from=e.from||p.from,to=e.to||p.to,errs=[...p.errs],warns=[...p.warns],skip=!!X.skip[i];
+  if(!from||!to||to<from)errs.push('Chưa có kỳ thu hợp lệ, hãy nhập ngày');
+  else{const k=from+'|'+to;if(seen[k]!==undefined)errs.push(`Kỳ thu trùng với trang "${X.sheets[seen[k]].name}", hãy sửa ngày`);else seen[k]=i;
+   if(ss&&D.sheets.some(s=>s.sourceId===ss.id&&s.from===from&&s.to===to))warns.push('Đã có bảng kê cùng kỳ thu trong phần mềm')}
+  if(!p.collector)errs.push('Không thấy tên người thu');
+  if(X.mName&&p.marketName&&norm(p.marketName)!==norm(X.mName))warns.push(`Tên chợ trong trang là "${p.marketName}", khác trang đầu tiên`);
+  const mine={};p.lines.forEach(l=>{const hit=[];
+   if(ss)D.sheets.filter(s=>s.sourceId===ss.id).forEach(s=>s.lines.forEach(x=>{if(x.face===l.face&&x.a<=l.b&&l.a<=x.b)hit.push(`bảng kê #${s.id}`)}));
+   (acc[l.face]||[]).forEach(x=>{if(x.a<=l.b&&l.a<=x.b)hit.push(`trang "${x.n}"`)});(mine[l.face]||[]).forEach(x=>{if(x.a<=l.b&&l.a<=x.b)hit.push(`dòng ${x.row} cùng trang`)});
+   (mine[l.face]=mine[l.face]||[]).push(l);if(hit.length)errs.push(`Dòng ${l.row}: seri ${vnd(l.face)}đ ${l.a}-${l.b} trùng ${[...new Set(hit)].join(', ')}`)});
+  if(!errs.length&&!skip)p.lines.forEach(l=>(acc[l.face]=acc[l.face]||[]).push({a:l.a,b:l.b,n:p.name}));
+  return{i,p,from,to,errs,warns,skip,ok:!errs.length&&!skip}})}
+Object.assign(A,{
+ async xb(inp){const f=inp.files[0];if(!f)return;try{const all=await readXlsx(f),ps=[],ig=[];all.forEach(sh=>{const p=parseBK(sh);p?ps.push(p):ig.push(sh.name)});
+  if(!ps.length)throw new Error('Không nhận dạng được trang bảng kê nào. Cần có bảng với cột "Từ số seri" và "Đến số seri".');
+  V.xi={file:f.name,sheets:ps,ig,edits:{},skip:{},mName:ps[0].marketName,sName:ps[0].sourceName};A.xiGuess('new');render()}catch(e){alert(e.message||'Không đọc được file')}},
+ xiGuess(ms){const X=V.xi;if(ms==='new'||ms===undefined){const m=D.markets.find(m=>norm(m.name).includes(norm(X.mName)));X.mSel=m?String(m.id):'new'}else X.mSel=ms;
+  const s=X.mSel!=='new'&&D.sources.find(s=>s.marketId===+X.mSel&&norm(s.name)===norm(X.sName));X.sSel=s?String(s.id):'new'},
+ xiM(v){A.xiGuess(v);render()},xiS(v){V.xi.sSel=v;render()},
+ xiPeriod(i,k,v){(V.xi.edits[i]=V.xi.edits[i]||{})[k]=v;render()},xiSkip(i,on){V.xi.skip[i]=!on;render()},
+ xiGo(){if(!need())return;const X=V.xi,plan=xiPlan().filter(r=>r.ok);if(!plan.length)return;let nm=0,ns=0,nd=0;
+  let m=X.mSel==='new'?null:mk(+X.mSel);if(!m){const w=norm(X.mName).split(' ').filter(Boolean),base=(w.map(x=>x[0]).join('')||'C').toUpperCase();let c=base,k=2;while(D.markets.some(x=>x.code===c))c=base+k++;
+   m={id:nid(),code:c,name:'Chợ '+X.mName,address:'',active:true};D.markets.push(m);nm++}
+  let s=X.sSel==='new'?null:src(+X.sSel);if(!s){const base=(X.sName.split(/\s+/).map(x=>x[0]).join('')||'NT').toUpperCase();let c=base,k=2;while(D.sources.some(x=>x.marketId===m.id&&x.code===c))c=base+k++;
+   s={id:nid(),marketId:m.id,code:c,name:X.sName,kind:''};D.sources.push(s);ns++}
+  const dn=face=>{let d=D.dens.find(x=>x.sourceId===s.id&&x.face===face);if(!d){d={id:nid(),sourceId:s.id,label:'Phiếu '+vnd(face)+' đồng',face};D.dens.push(d);nd++}return d};
+  plan.forEach(r=>{const lines=r.p.lines.map(l=>({denId:dn(l.face).id,face:l.face,book:l.book,a:l.a,b:l.b,qty:l.b-l.a+1,amt:(l.b-l.a+1)*l.face}));
+   D.sheets.push({id:nid(),marketId:m.id,sourceId:s.id,collector:r.p.collector,from:r.from,to:r.to,createdBy:D.op,lines,events:[],origin:'excel',file:X.file,sheet:r.p.name})});
+  log('Nhập bảng kê từ Excel',`${plan.length} bảng kê từ ${X.file}`);save();V.xi=null;render();
+  alert(`Đã nhập ${plan.length} bảng kê${nm?`, tạo chợ mới "${m.name}"`:''}${ns?`, nguồn thu mới "${s.name}"`:''}${nd?`, ${nd} loại phiếu mới`:''}.`)}
+});
+function xiPanel(){const X=V.xi,P=xiPlan(),ok=P.filter(r=>r.ok),tot=ok.reduce((t,r)=>t+r.p.calc,0),srcs=X.mSel==='new'?[]:D.sources.filter(s=>s.marketId===+X.mSel);
+ return `<div class="note" style="margin-top:.8rem">Đã đọc file "${esc(X.file)}": nhận dạng ${X.sheets.length} bảng kê${X.ig.length?`, bỏ qua ${X.ig.length} trang không phải bảng kê (${esc(X.ig.join(', '))})`:''}. Kiểm tra rồi bấm Nhập. Trang báo lỗi sẽ không được nhập.</div>
+ <div class="inline"><label>Chợ<select onchange="A.xiM(this.value)"><option value="new" ${X.mSel==='new'?'selected':''}>Tạo chợ mới: Chợ ${esc(X.mName)}</option>${D.markets.map(m=>`<option value="${m.id}" ${X.mSel==m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
+ <label>Nguồn thu<select onchange="A.xiS(this.value)"><option value="new" ${X.sSel==='new'?'selected':''}>Tạo nguồn thu mới: ${esc(X.sName)}</option>${srcs.map(s=>`<option value="${s.id}" ${X.sSel==s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label></div>
+ <table><tr><th>Nhập</th><th>Trang</th><th>Kỳ thu</th><th>Người thu</th><th class="n">Dòng</th><th class="n">Ghi nhận (tính từ seri)</th><th>Kiểm tra</th></tr>
+ ${P.map(r=>`<tr class="${r.errs.length?'err':''}"><td><input type="checkbox" ${r.skip?'':'checked'} ${r.errs.length?'disabled':''} onchange="A.xiSkip(${r.i},this.checked)"></td><td>${esc(r.p.name)}</td>
+ <td><input type="date" value="${r.from}" onchange="A.xiPeriod(${r.i},'from',this.value)"> <input type="date" value="${r.to}" onchange="A.xiPeriod(${r.i},'to',this.value)"></td>
+ <td>${esc(r.p.collector)}</td><td class="n">${r.p.lines.length}</td><td class="n">${vnd(r.p.calc)}</td>
+ <td>${r.errs.length?`<span class="bad">${esc(r.errs.slice(0,3).join('; '))}${r.errs.length>3?` (và ${r.errs.length-3} lỗi khác)`:''}</span>`:r.skip?'<span class="mut">Bỏ qua</span>':'<span class="ok">Hợp lệ</span>'}
+ ${r.warns.map(w=>`<br><span class="warn">${esc(w)}</span>`).join('')}</td></tr>`).join('')}</table>
+ <p><button ${ok.length?'':'disabled'} onclick="A.xiGo()">Nhập ${ok.length} bảng kê (${vnd(tot)} đ)</button> <span class="mut">${P.length-ok.length} trang không nhập. Số tiền trên là ghi nhận theo bảng kê, chưa phải thực thu.</span></p>`}
+
+function guide(){const g=(t,b,o)=>`<details ${o?'open':''}><summary>${t}</summary>${b}</details>`;
+ return `<h1>Hướng dẫn sử dụng</h1><p class="mut">Làm lần lượt từ mục 1. Mỗi phần sau cần phần trước đã có dữ liệu.</p>
+ ${g('1. Bắt đầu: nhập tên người thao tác',`<p>Ô <b>Người đang thao tác</b> nằm trong <b>thanh màu vàng ngay dưới thanh menu đen</b>, luôn hiện ở mọi trang. Gõ họ tên người đang dùng máy. Chưa có tên thì các nút thêm và lưu sẽ không chạy. Tên này được ghi vào nhật ký, và dùng để chặn người lập bảng kê tự xác nhận thực thu của chính mình. <b>Đổi tên ở ô này khi đổi người sử dụng.</b></p>`,1)}
+ ${g('2. Khai báo chợ, nguồn thu, loại phiếu',`<ol><li>Vào <b>Chợ và nguồn thu</b>, kéo xuống mục <b>Thêm chợ</b>, nhập mã chợ, tên chợ, địa chỉ rồi bấm <b>Thêm chợ</b>.</li>
+ <li>Bấm vào <b>tên chợ</b> (chữ gạch chân). Ở mục <b>Thêm nguồn thu</b>, nhập mã (ví dụ HR), tên nguồn thu, loại dịch vụ.</li>
+ <li>Dưới nguồn thu vừa tạo, nhập <b>Tên loại phiếu</b> và <b>Mệnh giá</b> (chỉ gõ số, ví dụ 2000), bấm <b>Thêm loại phiếu</b>. Làm lần lượt cho từng mệnh giá.</li>
+ <li>Muốn thêm nhiều nguồn thu cùng lúc: dùng <b>Tải nhiều nguồn thu từ file Excel</b> ở cuối trang chợ. File có các cột mã, tên, loại dịch vụ, tên loại phiếu, mệnh giá (một nguồn nhiều mệnh giá thì viết nhiều dòng cùng mã). Phần mềm tự đoán cột, bạn xem trước rồi bấm nhập.</li>
+ <li>Chợ ngừng hoạt động: bấm <b>Ngừng sử dụng chợ</b>. Dữ liệu cũ vẫn giữ nguyên.</li></ol>
+ <p>Nếu tải bảng kê từ Excel (mục 4) thì chợ, nguồn thu và loại phiếu có thể được tạo tự động, bạn không cần khai báo trước.</p>`)}
+ ${g('3. Nhập bảng kê bằng tay',`<ol><li>Vào trang của chợ, ở đúng nguồn thu bấm <b>Nhập bảng kê</b>.</li>
+ <li>Điền <b>Người thu tiền</b>, <b>Từ ngày</b>, <b>Đến ngày</b>.</li>
+ <li>Mỗi dòng là một dãy phiếu: chọn <b>Loại phiếu</b>, gõ <b>Quyển số</b> (chữ, có thể bỏ trống), <b>Từ seri</b>, <b>Đến seri</b>. Số phiếu và thành tiền tự hiện.</li>
+ <li>Cột <b>Kiểm tra</b> báo <span class="ok">Hợp lệ</span> hoặc <span class="bad">báo lỗi</span> (seri cuối nhỏ hơn seri đầu, trùng bảng kê đã lưu, trùng dòng khác trong cùng bảng kê). Bấm <b>Thêm dòng</b> nếu còn dãy phiếu khác, <b>Xóa</b> để bỏ dòng.</li>
+ <li>Khi mọi dòng hợp lệ, nút <b>Lưu bảng kê</b> mới bấm được.</li></ol>
+ <p><b>Quy tắc seri:</b> hai loại phiếu khác mệnh giá được dùng cùng số seri. Cùng một mệnh giá thì các dãy seri không được chồng nhau, kể cả giữa các kỳ thu.</p>`)}
+ ${g('4. Tải bảng kê từ file Excel',`<ol><li>Vào <b>Bảng kê</b>, ở phần <b>Tải bảng kê từ Excel</b> chọn file <b>.xlsx</b> (không dùng .xls cũ, hãy lưu lại thành .xlsx).</li>
+ <li>Phần mềm tự nhận chợ, nguồn thu, kỳ thu, người thu, mệnh giá, quyển, seri từ các trang "BẢNG KÊ THU TIỀN ...". Số phiếu và thành tiền được tính lại từ seri.</li>
+ <li>Xem bảng kết quả: trang <span class="ok">Hợp lệ</span> sẽ được nhập, trang <span class="bad">báo lỗi</span> bị bỏ qua. Bỏ tích ô <b>Nhập</b> nếu không muốn nhập một trang.</li>
+ <li>Trang báo <b>trùng kỳ thu</b>: sửa lại hai ô ngày ngay trên bảng. Trang báo <b>trùng seri</b>: xác nhận dòng nào đúng rồi sửa file Excel và tải lại.</li>
+ <li>Chữ vàng là <span class="warn">cảnh báo</span> (ví dụ tổng cộng trong file khác tổng tính từ seri), vẫn nhập được nhưng nên kiểm tra lại.</li>
+ <li>Bấm <b>Nhập … bảng kê</b>. Tải lại cùng file lần nữa sẽ không bị nhân đôi vì seri đã có sẽ báo trùng.</li></ol>
+ <p>Số tiền nhập từ Excel là <b>ghi nhận theo bảng kê</b>, chưa phải số đã thực thu. Phần thực thu làm ở mục 5.</p>`)}
+ ${g('5. Xác nhận thực thu, bàn giao, nộp tiền',`<ol><li>Vào <b>Bảng kê</b>, bấm số bảng kê (ví dụ #3), kéo xuống cuối trang.</li>
+ <li><b>Đổi ô Người đang thao tác sang người kiểm tra</b> (khác người lập bảng kê).</li>
+ <li>Chọn <b>Thực thu đã xác nhận</b>, nhập số tiền thực đếm được, ngày, số chứng từ, bấm <b>Ghi nhận</b>. Mỗi bảng kê chỉ xác nhận một lần.</li>
+ <li>Sau đó ghi <b>Bàn giao tiền</b> và <b>Nộp tiền</b>. Tổng bàn giao và tổng nộp không được vượt số thực thu đã xác nhận, và phải xác nhận thực thu trước.</li></ol>
+ <p>Trang bảng kê hiện bốn con số: ghi nhận, thực thu, đã bàn giao, đã nộp. Nếu thực thu khác ghi nhận, phần mềm báo <span class="bad">chênh lệch</span> cần giải trình.</p>`)}
+ ${g('6. Xem tổng quan toàn Trung tâm',`<p>Trang <b>Tổng quan</b> tổng hợp theo từng chợ và cộng chung toàn Trung tâm. Chọn một chợ ở ô <b>Chợ</b> để xem riêng chợ đó. Mục <b>Cần xử lý</b> liệt kê bảng kê chưa xác nhận thực thu, có chênh lệch, hoặc còn phải nộp. Bấm số bảng kê để mở chi tiết. Số thực thu chỉ gồm các bảng kê đã xác nhận.</p>`)}
+ ${g('7. Theo dõi seri phiếu thu',`<ul><li>Bấm <b>Theo dõi seri</b>, chọn chợ, nguồn thu, mệnh giá. Phần mềm liệt kê các dãy seri đã ghi nhận theo thứ tự số, kèm quyển, bảng kê, kỳ thu, người thu.</li>
+ <li><b>Tra cứu một số seri:</b> gõ số vào ô <b>Tra cứu số seri</b>, phần mềm cho biết số đó nằm ở bảng kê nào theo từng mệnh giá, hoặc chưa có trong bảng kê nào.</li>
+ <li><b>Dòng vàng "Khoảng trống"</b> là các số seri nằm giữa hai dãy đã ghi nhận mà chưa có bảng kê nào. Có thể là phiếu chưa bán, bảng kê chưa nhập hoặc bị sót: cần đối chiếu với quyển phiếu thực tế rồi mới kết luận.</li>
+ <li>Bấm <b>Xuất CSV</b> để mở danh sách bằng Excel. Bấm số bảng kê để xem chi tiết.</li></ul>`)}
+ ${g('8. Sao lưu, xuất Excel, khôi phục',`<ul><li>Dữ liệu lưu <b>trong trình duyệt của máy này</b>. Máy khác hoặc trình duyệt khác sẽ không thấy. Xóa dữ liệu duyệt web sẽ mất dữ liệu.</li>
+ <li>Vào <b>Sao lưu</b>, bấm <b>Tải file sao lưu (.json)</b> sau mỗi lần nhập nhiều. Nên cất thêm một bản vào USB hoặc đám mây.</li>
+ <li><b>Xuất bảng kê ra Excel (.csv)</b> để mở bằng Excel.</li>
+ <li><b>Khôi phục</b>: chọn file .json đã sao lưu, phần mềm thay toàn bộ dữ liệu hiện tại bằng bản sao lưu.</li>
+ <li>Cuối trang có <b>nhật ký thao tác</b> và nút <b>Xóa toàn bộ dữ liệu</b> (hãy sao lưu trước).</li></ul>`)}
+ ${g('9. Gặp lỗi thường gặp',`<ul><li><b>Nút Thêm hoặc Lưu không chạy:</b> chưa nhập tên vào ô Người đang thao tác.</li>
+ <li><b>Không thấy nút Nhập bảng kê:</b> chợ đang ở trạng thái ngừng sử dụng, hoặc chưa có nguồn thu.</li>
+ <li><b>"Nguồn thu chưa có loại phiếu":</b> cần khai báo mệnh giá trước ở trang chợ.</li>
+ <li><b>"Người lập bảng kê không tự xác nhận":</b> đổi ô Người đang thao tác sang người khác.</li>
+ <li><b>"Cần xác nhận thực thu trước":</b> ghi nhận thực thu trước khi bàn giao hoặc nộp.</li>
+ <li><b>Không đọc được file Excel:</b> kiểm tra là file .xlsx, dưới 8 MB, và dùng Chrome hoặc Edge bản mới.</li>
+ <li><b>Nhập nhầm dữ liệu:</b> bản này chưa sửa hoặc xóa từng dòng. Khôi phục từ file sao lưu gần nhất, hoặc xóa toàn bộ rồi nhập lại.</li></ul>`)}
+ ${g('10. Giới hạn của bản chạy thử này',`<ul><li>Chưa có đăng nhập và phân quyền thật; ai mở file trên máy cũng thao tác được.</li>
+ <li>Dùng được trên một máy, một người tại một thời điểm. Nhiều người dùng cùng lúc cần bản web nội bộ có máy chủ.</li>
+ <li>Chưa có chức năng sửa, hủy dòng đã lưu, và chưa có biểu đồ.</li></ul>`)}`}
+
+/* ===== Theo dõi seri phiếu thu ===== */
+function seriData(F){const mid=+(F.m||(D.markets[0]&&D.markets[0].id)||0),sid=+(F.s||0),sl=D.sources.filter(x=>x.marketId===mid),src1=sid&&sl.some(x=>x.id===sid)?sid:(sl[0]&&sl[0].id)||0,G={};
+ D.sheets.filter(x=>x.marketId===mid&&x.sourceId===src1).forEach(sh=>sh.lines.forEach(l=>(G[l.face]=G[l.face]||[]).push({a:l.a,b:l.b,qty:l.qty,book:l.book,sh})));
+ const groups=Object.keys(G).map(Number).sort((x,y)=>x-y).filter(f=>!F.d||+F.d===f).map(face=>{const rs=G[face].sort((x,y)=>x.a-y.a||x.b-y.b),rows=[];let mx=null,used=0,gap=0,dup=0;
+  rs.forEach(r=>{if(mx!==null){if(r.a>mx+1){const g={gap:true,a:mx+1,b:r.a-1,qty:r.a-mx-1};rows.push(g);gap+=g.qty}else if(r.a<=mx){r.dup=true;dup++}}
+   rows.push(r);used+=r.qty;mx=mx===null?r.b:Math.max(mx,r.b)});
+  return{face,rows,used,gap,dup,min:rs[0].a,max:mx,n:rs.length}});
+ return{mid,src:src1,sl,groups}}
+Object.assign(A,{sf(k,v){const F=V.sf=V.sf||{m:'',s:'',d:'',q:''};F[k]=v;if(k==='m'){F.s='';F.d=''}if(k==='s')F.d='';render()},
+ seriCsv(){const F=V.sf||{m:'',s:'',d:'',q:''},R=seriData(F),rows=[['Mệnh giá','Từ seri','Đến seri','Số phiếu','Tình trạng','Quyển','Bảng kê','Kỳ thu','Người thu']];
+  R.groups.forEach(g=>g.rows.forEach(r=>rows.push(r.gap?[g.face,r.a,r.b,r.qty,'Chưa có trong bảng kê nào','','','','']:[g.face,r.a,r.b,r.qty,r.dup?'Trùng dãy trên':'Đã ghi nhận',r.book,'#'+r.sh.id,r.sh.from+' đến '+r.sh.to,r.sh.collector])));
+  dl('theo-doi-seri.csv','\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv')}});
+function seri(){const F=V.sf=V.sf||{m:'',s:'',d:'',q:''};if(!D.markets.length)return '<h1>Theo dõi seri</h1><p class="mut">Chưa có chợ. Hãy khai báo chợ và nhập bảng kê trước.</p>';
+ const R=seriData(F),q=int(F.q),dens=[...new Set(D.sheets.filter(x=>x.marketId===R.mid&&x.sourceId===R.src).flatMap(x=>x.lines.map(l=>l.face)))].sort((a,b)=>a-b);
+ const hit=q===null?'':R.groups.map(g=>{const r=g.rows.find(x=>!x.gap&&x.a<=q&&q<=x.b);return `<tr><td class="n">${vnd(g.face)} đ</td><td>${r?`<span class="ok">Đã ghi nhận</span> trong <a onclick="go('sheet',{sid:${r.sh.id}})">bảng kê #${r.sh.id}</a> (dãy ${r.a}-${r.b}, kỳ ${r.sh.from} đến ${r.sh.to}, người thu ${esc(r.sh.collector)})`:'<span class="warn">Chưa có trong bảng kê nào</span>'}</td></tr>`}).join('');
+ return `<h1>Theo dõi seri phiếu thu</h1><div class="inline"><label>Chợ<select onchange="A.sf('m',this.value)">${D.markets.map(m=>`<option value="${m.id}" ${R.mid===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
+ <label>Nguồn thu<select onchange="A.sf('s',this.value)">${R.sl.map(x=>`<option value="${x.id}" ${R.src===x.id?'selected':''}>${esc(x.name)}</option>`).join('')||'<option>(chưa có)</option>'}</select></label>
+ <label>Mệnh giá<select onchange="A.sf('d',this.value)"><option value="">Tất cả</option>${dens.map(f=>`<option value="${f}" ${+F.d===f?'selected':''}>${vnd(f)} đ</option>`).join('')}</select></label>
+ <label>Tra cứu số seri<input type="number" min="1" style="width:9rem" value="${esc(F.q)}" placeholder="Gõ số seri" onchange="A.sf('q',this.value)"></label><button class="sec" onclick="A.seriCsv()">Xuất CSV</button></div>
+ ${q!==null?`<h2>Kết quả tra cứu seri ${q}</h2><table>${hit||'<tr><td class="mut">Chưa có dữ liệu.</td></tr>'}</table>`:''}
+ <p class="mut">Mỗi mệnh giá có dãy seri riêng. "Khoảng trống" là các số seri nằm giữa hai dãy đã ghi nhận nhưng chưa xuất hiện trong bảng kê nào (có thể là phiếu chưa bán, chưa nhập hoặc bị sót, cần đối chiếu với quyển phiếu thực tế).</p>
+ ${R.groups.map(g=>`<h2>Phiếu ${vnd(g.face)} đồng</h2><p>Đã ghi nhận <b>${vnd(g.used)}</b> phiếu trong ${g.n} dãy, seri từ ${g.min} đến ${g.max}.
+ ${g.gap?`<span class="warn">Có ${vnd(g.gap)} số seri trong khoảng trống.</span>`:'<span class="ok">Liên tục, không có khoảng trống.</span>'}${g.dup?` <span class="bad">${g.dup} dãy trùng dãy trước, cần kiểm tra.</span>`:''}</p>
+ <table><tr><th class="n">Từ seri</th><th class="n">Đến seri</th><th class="n">Số phiếu</th><th>Quyển</th><th>Bảng kê</th><th>Kỳ thu</th><th>Người thu</th></tr>
+ ${g.rows.map(r=>r.gap?`<tr class="gap"><td class="n">${r.a}</td><td class="n">${r.b}</td><td class="n">${vnd(r.qty)}</td><td colspan="4" class="warn">Khoảng trống: chưa có trong bảng kê nào</td></tr>`
+ :`<tr class="${r.dup?'err':''}"><td class="n">${r.a}</td><td class="n">${r.b}</td><td class="n">${vnd(r.qty)}</td><td>${esc(r.book)}</td><td><a onclick="go('sheet',{sid:${r.sh.id}})">#${r.sh.id}</a></td><td>${r.sh.from} đến ${r.sh.to}</td><td>${esc(r.sh.collector)}</td></tr>`).join('')}</table>`).join('')||'<p class="mut">Nguồn thu này chưa có bảng kê nào.</p>'}`}
+function render(){const v=V.view;document.getElementById('app').innerHTML={home,markets,entry,sheets,sheet,seri,backup,guide}[v]();
+ document.querySelectorAll('header [data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='entry'?'markets':v==='sheet'?'sheets':v)));
+ if(v==='entry')A.refresh()}
+document.querySelectorAll('header [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
+const op=document.getElementById('op'),bar=document.getElementById('opbar'),omsg=document.getElementById('opmsg');
+const opState=()=>{bar.classList.toggle('empty',!D.op.trim());omsg.textContent=D.op.trim()?'Mọi thao tác bên dưới sẽ ghi tên này. Đổi người sử dụng thì sửa tên ở đây.':'Chưa có tên: các nút thêm và lưu chưa hoạt động.'};
+op.value=D.op||'';op.oninput=()=>{D.op=op.value;save();opState();const eo=document.getElementById('evop');if(eo)eo.textContent=D.op.trim()||'(chưa nhập)'};opState();
+render();
+</script></body></html>
