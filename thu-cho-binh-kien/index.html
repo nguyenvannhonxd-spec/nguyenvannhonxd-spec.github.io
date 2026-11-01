@@ -25,14 +25,15 @@ details{background:#fff;border:1px solid var(--line);margin-bottom:.5rem;padding
 </style></head><body>
 <header><b>Thu chợ - Bình Kiến (bản chạy thử trên máy)</b>
 <button data-v="home">Tổng quan</button><button data-v="markets">Chợ và nguồn thu</button>
-<button data-v="sheets">Bảng kê</button><button data-v="seri">Theo dõi seri</button><button data-v="backup">Sao lưu</button><button data-v="guide">Hướng dẫn</button>
+<button data-v="sheets">Bảng kê</button><button data-v="seri">Theo dõi seri</button><button data-v="stock">Giao nhận biên lai</button><button data-v="pending">Chờ làm rõ</button><button data-v="backup">Sao lưu</button><button data-v="guide">Hướng dẫn</button>
 </header>
 <div id="opbar"><label for="op">Người đang thao tác:</label> <input id="op" placeholder="Gõ họ tên của bạn vào đây" autocomplete="off"> <span id="opmsg"></span></div>
 <main id="app"></main>
 <script>
 const KEY='thuChoBinhKien_v1';
-const fresh=()=>({seq:1,op:'',markets:[],sources:[],dens:[],sheets:[],log:[]});
+const fresh=()=>({pending:[],stock:[],seq:1,op:'',markets:[],sources:[],dens:[],sheets:[],log:[]});
 let D;try{D=JSON.parse(localStorage.getItem(KEY))||fresh()}catch(e){D=fresh()}
+D.stock=D.stock||[];D.pending=D.pending||[];
 let V={view:'home',mid:null,sid:null,draft:null,fm:''};
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){alert('Trình duyệt không cho lưu dữ liệu. Hãy mở file bằng Chrome hoặc Edge.')}};
 const nid=()=>D.seq++;
@@ -42,11 +43,11 @@ const log=(a,t)=>D.log.push({at:new Date().toISOString(),op:D.op,a,t});
 const mk=i=>D.markets.find(m=>m.id===i), src=i=>D.sources.find(s=>s.id===i), den=i=>D.dens.find(d=>d.id===i);
 const KINDS={confirmed:'Thực thu đã xác nhận',handover:'Bàn giao tiền',deposit:'Nộp tiền'};
 function need(){if(!D.op.trim()){alert('Hãy gõ họ tên của bạn vào ô "Người đang thao tác" (thanh màu vàng ở đầu trang) trước.');return false}return true}
-function stat(s){const rec=s.lines.reduce((t,l)=>t+l.amt,0),ev=k=>s.events.filter(e=>e.kind===k);
+function stat(s){const rec=s.lines.reduce((t,l)=>t+l.amt,0),ev=k=>s.events.filter(e=>e.kind===k&&!e.void);
  const c=ev('confirmed').pop();return{rec,conf:c?c.amt:null,hand:ev('handover').reduce((t,e)=>t+e.amt,0),dep:ev('deposit').reduce((t,e)=>t+e.amt,0)}}
 function conflicts(mid,d,a,b){const r=[];D.sheets.filter(s=>s.marketId===mid).forEach(s=>s.lines.forEach(l=>{
  if(l.denId===d&&l.a<=b&&a<=l.b)r.push(`${l.a}-${l.b} (bảng kê #${s.id})`)}));return r}
-const go=(v,x={})=>{Object.assign(V,{view:v,mid:null,sid:null,imp:null,xi:null},x);render()};
+const go=(v,x={})=>{Object.assign(V,{view:v,mid:null,sid:null,imp:null,xi:null,sb:null,ee:null},x);render()};
 const A={
  addMarket(f){if(!need())return false;const c=f.code.value.trim();if(D.markets.some(m=>m.code===c)){alert('Mã chợ đã tồn tại');return false}
   D.markets.push({id:nid(),code:c,name:f.name.value.trim(),address:f.address.value.trim(),active:true});log('Thêm chợ',c);save();render();return false},
@@ -86,11 +87,11 @@ const A={
   if(err){const e=document.getElementById('evmsg');if(e)e.textContent=err;alert(err);return false}
   s.events.push({kind:k,amt,date:f.date.value,ref:f.ref.value.trim(),note:f.note.value.trim(),by:D.op});log(KINDS[k],'#'+sid+': '+amt);save();render();return false},
  csv(){const rows=[['Bảng kê','Chợ','Nguồn thu','Từ ngày','Đến ngày','Người thu','Mệnh giá','Quyển','Từ seri','Đến seri','Số phiếu','Thành tiền']];
-  D.sheets.forEach(s=>s.lines.forEach(l=>rows.push([s.id,mk(s.marketId).name,src(s.sourceId).name,s.from,s.to,s.collector,l.face,l.book,l.a,l.b,l.qty,l.amt])));
-  dl('bang-ke.csv','\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv')},
+  D.sheets.forEach(s=>s.lines.forEach(l=>rows.push([s.id,mk(s.marketId).name,src(s.sourceId).name,dmy(s.from),dmy(s.to),s.collector,l.face,l.book,l.a,l.b,l.qty,l.amt])));
+  xlsxSave('bang-ke-'+new Date().toISOString().slice(0,10)+'.xlsx','B\u1ea3ng k\u00ea','DANH S\u00c1CH B\u1ea2NG K\u00ca THU TI\u1ec0N',rows,[9,18,26,12,12,22,11,20,11,11,10,14])},
  backup(){dl('sao-luu-thu-cho-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(D),'application/json')},
  restore(inp){const f=inp.files[0];if(!f)return;f.text().then(t=>{try{const x=JSON.parse(t);if(!x.markets||!x.sheets)throw 0;
-  if(confirm('Thay toàn bộ dữ liệu hiện tại bằng file sao lưu này?')){D=x;save();render()}}catch(e){alert('File sao lưu không hợp lệ')}})},
+  if(confirm('Thay toàn bộ dữ liệu hiện tại bằng file sao lưu này?')){D=x;D.stock=D.stock||[];D.pending=D.pending||[];save();render()}}catch(e){alert('File sao lưu không hợp lệ')}})},
  reset(){if(confirm('Xóa toàn bộ dữ liệu trên máy này? Hãy sao lưu trước.')){D=fresh();save();render()}}
 };
 function dl(n,t,m){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:m}));a.download=n;a.click()}
@@ -131,6 +132,36 @@ function entry(){const d=V.draft,s=src(d.sourceId),ds=D.dens.filter(x=>x.sourceI
  <tfoot><tr><td colspan="4">Tổng cộng</td><td class="n" id="tq">0</td><td class="n" id="ta">0</td><td colspan="2"></td></tr></tfoot></table>
  <p><button class="sec" onclick="A.addRow()">Thêm dòng</button> <button id="save" disabled onclick="A.saveSheet()">Lưu bảng kê</button>
  <span class="mut">Seri chỉ cần khác nhau trong cùng loại phiếu; hai mệnh giá có thể dùng cùng số seri.</span></p>`}
+/* ===== Sửa / hủy ghi nhận thực thu, bàn giao, nộp tiền ===== */
+const amtIn=v=>int(String(v).replace(/\s|đồng|đ/gi,'').replace(/[.,]/g,''));
+const dmy=iso=>iso?iso.slice(0,10).split('-').reverse().join('/'):'';
+Object.assign(A,{
+ evEdit(sid,i){V.ee={sid,i};render()},evClose(){V.ee=null;render()},
+ evSave(f,sid,i){if(!need())return false;const s=D.sheets.find(x=>x.id===sid),e=s&&s.events[i];if(!e||e.void)return false;
+  const amt=amtIn(f.amount.value),reason=f.reason.value.trim(),live=s.events.filter((x,j)=>j!==i&&!x.void),sum=k=>live.filter(x=>x.kind===k).reduce((t,x)=>t+x.amt,0),
+   cf=e.kind==='confirmed'?amt:(live.filter(x=>x.kind==='confirmed').pop()||{amt:0}).amt;let err='';
+  if(amt===null)err='Số tiền chưa hợp lệ: chỉ gõ số, ví dụ 940000 hoặc 940.000';else if(!f.date.value)err='Chưa chọn ngày';else if(!reason)err='Phải ghi lý do sửa';
+  else if(e.kind==='confirmed'&&s.createdBy.trim().toLowerCase()===D.op.trim().toLowerCase())err='Người lập bảng kê không được sửa xác nhận thực thu của chính mình. Hãy đổi tên ở ô "Người đang thao tác" sang người kiểm tra.';
+  else if(e.kind==='confirmed'&&(sum('handover')>amt||sum('deposit')>amt))err=`Số thực thu mới (${vnd(amt)}) nhỏ hơn số đã bàn giao (${vnd(sum('handover'))}) hoặc đã nộp (${vnd(sum('deposit'))}). Hãy sửa dòng bàn giao/nộp tiền trước.`;
+  else if(e.kind!=='confirmed'&&sum(e.kind)+amt>cf)err=`Tổng ${KINDS[e.kind].toLowerCase()} (${vnd(sum(e.kind)+amt)}) vượt số thực thu đã xác nhận (${vnd(cf)})`;
+  if(err){const m=document.getElementById('eemsg');if(m)m.textContent=err;alert(err);return false}
+  const old={amt:e.amt,date:e.date,ref:e.ref,note:e.note};(e.hist=e.hist||[]).push({at:new Date().toISOString(),by:D.op,reason,old});
+  e.amt=amt;e.date=f.date.value;e.ref=f.ref.value.trim();e.note=f.note.value.trim();
+  log('Sửa '+KINDS[e.kind].toLowerCase(),`#${sid}: ${vnd(old.amt)} → ${vnd(amt)} (lý do: ${reason})`);V.ee=null;save();render();return false},
+ evVoid(sid,i){if(!need())return;const s=D.sheets.find(x=>x.id===sid),e=s&&s.events[i];if(!e||e.void)return;
+  if(e.kind==='confirmed'&&s.createdBy.trim().toLowerCase()===D.op.trim().toLowerCase()){alert('Người lập bảng kê không được hủy xác nhận thực thu của chính mình. Hãy đổi sang người kiểm tra.');return}
+  if(e.kind==='confirmed'&&s.events.some(x=>!x.void&&x.kind!=='confirmed')){alert('Bảng kê còn ghi nhận bàn giao hoặc nộp tiền. Hãy hủy các dòng đó trước rồi mới hủy xác nhận thực thu.');return}
+  const r=prompt(`Hủy ghi nhận "${KINDS[e.kind]}" ${vnd(e.amt)} đ ngày ${dmy(e.date)}?\nNhập lý do hủy (bắt buộc):`);if(r===null)return;if(!r.trim()){alert('Phải ghi lý do hủy');return}
+  e.void=true;e.voidBy=D.op;e.voidAt=new Date().toISOString();e.voidReason=r.trim();
+  log('Hủy '+KINDS[e.kind].toLowerCase(),`#${sid}: ${vnd(e.amt)} (lý do: ${r.trim()})`);V.ee=null;save();render()}
+});
+function evRows(s){return s.events.map((e,i)=>{const h=(e.hist||[]).map(x=>`<br><span class="mut">Đã sửa ${new Date(x.at).toLocaleString('vi-VN')} bởi ${esc(x.by)}: ${vnd(x.old.amt)} đ, ngày ${dmy(x.old.date)}${x.old.ref?', CT '+esc(x.old.ref):''} → lý do: ${esc(x.reason)}</span>`).join('');
+  const row=`<tr style="${e.void?'opacity:.55;text-decoration:line-through':''}"><td>${dmy(e.date)}</td><td>${KINDS[e.kind]}</td><td class="n">${vnd(e.amt)}</td><td>${esc(e.ref)} ${esc(e.note)}${e.void?`<br><span class="bad" style="text-decoration:none;display:inline-block">Đã hủy bởi ${esc(e.voidBy)}: ${esc(e.voidReason)}</span>`:h}</td><td>${esc(e.by)}</td>
+  <td>${e.void?'':`<button class="sec" onclick="A.evEdit(${s.id},${i})">Sửa</button> <button class="sec" onclick="A.evVoid(${s.id},${i})">Hủy ghi nhận</button>`}</td></tr>`;
+  if(!(V.ee&&V.ee.sid===s.id&&V.ee.i===i&&!e.void))return row;
+  return row+`<tr><td colspan="6" style="background:#fff3d6"><form class="inline" onsubmit="return A.evSave(this,${s.id},${i})"><b>Sửa: ${KINDS[e.kind]}</b>
+  <label>Số tiền (đồng)<input name="amount" inputmode="numeric" value="${e.amt}" required></label><label>Ngày<input name="date" type="date" value="${e.date}" required></label><label>Số chứng từ<input name="ref" value="${esc(e.ref)}"></label><label>Ghi chú<input name="note" value="${esc(e.note)}"></label>
+  <label>Lý do sửa (bắt buộc)<input name="reason" required style="width:16rem" placeholder="Ví dụ: gõ nhầm số tiền"></label><button>Lưu sửa</button><button type="button" class="sec" onclick="A.evClose()">Đóng</button></form><span id="eemsg" class="bad"></span></td></tr>`}).join('')}
 function sheets(){return `<h1>Bảng kê</h1><h2>Tải bảng kê từ Excel</h2>
  <p class="mut">Chọn file .xlsx có các trang "BẢNG KÊ THU TIỀN ..." (mỗi trang một kỳ thu). Phần mềm tự nhận chợ, nguồn thu, kỳ thu, người thu, mệnh giá, quyển, seri; tự tính lại số phiếu và thành tiền từ seri; kiểm tra trùng seri rồi mới đưa vào bảng kê.</p>
  <input type="file" accept=".xlsx" onchange="A.xb(this)">${V.xi?xiPanel():''}<h2>Danh sách bảng kê</h2><table><tr><th>Số</th><th>Chợ</th><th>Nguồn thu</th><th>Kỳ thu</th><th>Người thu</th><th class="n">Ghi nhận</th><th>Tình trạng</th></tr>
@@ -144,13 +175,13 @@ function sheet(){const s=D.sheets.find(x=>x.id===V.sid),x=stat(s);
  <h2>Tình trạng tiền</h2><table><tr><td>Ghi nhận theo bảng kê</td><td class="n">${vnd(x.rec)}</td><td></td></tr>
  <tr><td>Thực thu đã xác nhận</td><td class="n">${x.conf===null?'-':vnd(x.conf)}</td><td>${x.conf===null?'<span class="warn">Chưa xác nhận thực thu</span>':x.conf===x.rec?'<span class="ok">Khớp bảng kê</span>':`<span class="bad">Chênh lệch ${vnd(x.conf-x.rec)} đ, cần giải trình</span>`}</td></tr>
  <tr><td>Đã bàn giao</td><td class="n">${vnd(x.hand)}</td><td></td></tr><tr><td>Đã nộp</td><td class="n">${vnd(x.dep)}</td><td>${x.conf!==null&&x.dep<x.conf?`<span class="warn">Còn phải nộp ${vnd(x.conf-x.dep)} đ</span>`:''}</td></tr></table>
- ${s.events.length?`<h2>Lịch sử ghi nhận</h2><table><tr><th>Ngày</th><th>Nội dung</th><th class="n">Số tiền</th><th>Chứng từ, ghi chú</th><th>Người ghi</th></tr>${s.events.map(e=>`<tr><td>${e.date}</td><td>${KINDS[e.kind]}</td><td class="n">${vnd(e.amt)}</td><td>${esc(e.ref)} ${esc(e.note)}</td><td>${esc(e.by)}</td></tr>`).join('')}</table>`:''}
+ ${s.events.length?`<h2>Lịch sử ghi nhận</h2><p class="mut">Ghi nhận sai thì bấm <b>Sửa</b> (bắt buộc ghi lý do) hoặc <b>Hủy ghi nhận</b>. Số cũ vẫn được giữ lại trong lịch sử và nhật ký.</p><table><tr><th>Ngày</th><th>Nội dung</th><th class="n">Số tiền</th><th>Chứng từ, ghi chú</th><th>Người ghi</th><th></th></tr>${evRows(s)}</table>`:''}
  <p class="note">Đang ghi nhận với tên: <b id="evop">${esc(D.op)||'(chưa nhập)'}</b>. Muốn đổi sang người kiểm tra, sửa ô <b>Người đang thao tác</b> ở thanh màu vàng trên cùng trang.</p>
  <p id="evmsg" class="bad"></p>
  <form class="inline" onsubmit="return A.addEvent(this,${s.id})"><label>Nội dung<select name="kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
  <label>Số tiền (đồng)<input name="amount" inputmode="numeric" autocomplete="off" placeholder="4311000 hoặc 4.311.000" required></label><label>Ngày<input name="date" type="date" required></label><label>Số chứng từ<input name="ref"></label><label>Ghi chú<input name="note"></label><button>Ghi nhận</button></form>`}
 function backup(){return `<h1>Sao lưu và xuất dữ liệu</h1><div class="note">Dữ liệu lưu ngay trong trình duyệt của máy này. Xóa dữ liệu duyệt web hoặc đổi trình duyệt/máy sẽ không thấy dữ liệu. Hãy sao lưu thường xuyên.</div>
- <p><button onclick="A.backup()">Tải file sao lưu (.json)</button> <button class="sec" onclick="A.csv()">Xuất bảng kê ra Excel (.csv)</button></p>
+ <p><button onclick="A.backup()">Tải file sao lưu (.json)</button> <button class="sec" onclick="A.csv()">Xuất bảng kê ra Excel (.xlsx)</button> <button class="sec" onclick="A.stockCsv()">Xuất tồn biên lai theo sổ (đến hiện tại, Excel .xlsx)</button></p>
  <h2>Khôi phục</h2><p><input type="file" accept=".json" onchange="A.restore(this)"></p><h2>Nhật ký thao tác</h2>
  <table><tr><th>Thời gian</th><th>Người đang thao tác</th><th>Thao tác</th><th>Đối tượng</th></tr>${[...D.log].reverse().slice(0,50).map(l=>`<tr><td>${new Date(l.at).toLocaleString('vi-VN')}</td><td>${esc(l.op)}</td><td>${esc(l.a)}</td><td>${esc(l.t)}</td></tr>`).join('')||'<tr><td colspan="4" class="mut">Chưa có thao tác.</td></tr>'}</table>
  <h2>Xóa dữ liệu</h2><button class="sec" onclick="A.reset()">Xóa toàn bộ dữ liệu trên máy này</button>`}
@@ -261,28 +292,29 @@ Object.assign(A,{
   const s=X.mSel!=='new'&&D.sources.find(s=>s.marketId===+X.mSel&&norm(s.name)===norm(X.sName));X.sSel=s?String(s.id):'new'},
  xiM(v){A.xiGuess(v);render()},xiS(v){V.xi.sSel=v;render()},
  xiPeriod(i,k,v){(V.xi.edits[i]=V.xi.edits[i]||{})[k]=v;render()},xiSkip(i,on){V.xi.skip[i]=!on;render()},
- xiGo(){if(!need())return;const X=V.xi,plan=xiPlan().filter(r=>r.ok);if(!plan.length)return;let nm=0,ns=0,nd=0;
-  let m=X.mSel==='new'?null:mk(+X.mSel);if(!m){const w=norm(X.mName).split(' ').filter(Boolean),base=(w.map(x=>x[0]).join('')||'C').toUpperCase();let c=base,k=2;while(D.markets.some(x=>x.code===c))c=base+k++;
-   m={id:nid(),code:c,name:'Chợ '+X.mName,address:'',active:true};D.markets.push(m);nm++}
-  let s=X.sSel==='new'?null:src(+X.sSel);if(!s){const base=(X.sName.split(/\s+/).map(x=>x[0]).join('')||'NT').toUpperCase();let c=base,k=2;while(D.sources.some(x=>x.marketId===m.id&&x.code===c))c=base+k++;
-   s={id:nid(),marketId:m.id,code:c,name:X.sName,kind:''};D.sources.push(s);ns++}
-  const dn=face=>{let d=D.dens.find(x=>x.sourceId===s.id&&x.face===face);if(!d){d={id:nid(),sourceId:s.id,label:'Phiếu '+vnd(face)+' đồng',face};D.dens.push(d);nd++}return d};
-  plan.forEach(r=>{const lines=r.p.lines.map(l=>({denId:dn(l.face).id,face:l.face,book:l.book,a:l.a,b:l.b,qty:l.b-l.a+1,amt:(l.b-l.a+1)*l.face}));
-   D.sheets.push({id:nid(),marketId:m.id,sourceId:s.id,collector:r.p.collector,from:r.from,to:r.to,createdBy:D.op,lines,events:[],origin:'excel',file:X.file,sheet:r.p.name})});
-  log('Nhập bảng kê từ Excel',`${plan.length} bảng kê từ ${X.file}`);save();V.xi=null;render();
-  alert(`Đã nhập ${plan.length} bảng kê${nm?`, tạo chợ mới "${m.name}"`:''}${ns?`, nguồn thu mới "${s.name}"`:''}${nd?`, ${nd} loại phiếu mới`:''}.`)}
+ xiGo(){if(!need())return;const X=V.xi,plan=xiPlan().filter(r=>!r.skip),ok=plan.filter(r=>r.ok),rest=plan.filter(r=>!r.ok);if(!plan.length)return;let ctx=null,nPend=0,nDup=0;const d0=D.dens.length;
+  const cx=()=>ctx||(ctx=ensureCtx(X.mSel==='new'?0:+X.mSel,X.mName,X.sSel==='new'?0:+X.sSel,X.sName));
+  ok.forEach(r=>{const {m,s}=cx();D.sheets.push({id:nid(),marketId:m.id,sourceId:s.id,collector:r.p.collector,from:r.from,to:r.to,createdBy:D.op,origin:'excel',file:X.file,sheet:r.p.name,events:[],
+   lines:r.p.lines.map(l=>({denId:getDen(s,l.face).id,face:l.face,book:l.book,a:l.a,b:l.b,qty:l.b-l.a+1,amt:(l.b-l.a+1)*l.face}))})});
+  const es=X.sSel==='new'?null:src(+X.sSel);
+  rest.forEach(r=>{if(D.pending.some(x=>x.type==='sheet'&&x.file===X.file&&x.name===r.p.name)||D.sheets.some(x=>x.file===X.file&&x.sheet===r.p.name)){nDup++;return}
+   if(es&&r.p.lines.length&&r.p.lines.every(l=>D.sheets.some(x=>x.sourceId===es.id&&x.lines.some(y=>y.face===l.face&&y.a===l.a&&y.b===l.b)))){nDup++;return}
+   D.pending.push({id:nid(),type:'sheet',marketId:X.mSel==='new'?(ctx?ctx.m.id:null):+X.mSel,sourceId:X.sSel==='new'?(ctx?ctx.s.id:null):+X.sSel,marketName:X.mName,sourceName:X.sName,file:X.file,name:r.p.name,
+    collector:r.p.collector,from:r.from,to:r.to,lines:r.p.lines.map(l=>({row:l.row,face:l.face,book:l.book,a:String(l.a),b:String(l.b)})),note:r.errs.join('; ')});nPend++});
+  log('Nhập bảng kê từ Excel',`${ok.length} bảng kê vào sổ, ${nPend} chờ làm rõ (${X.file})`);save();V.xi=null;render();
+  alert(`Đã nhập ${ok.length} bảng kê${ctx&&ctx.nm?`, tạo chợ mới "${ctx.m.name}"`:''}${ctx&&ctx.ns?`, nguồn thu mới "${ctx.s.name}"`:''}${D.dens.length>d0?`, ${D.dens.length-d0} loại phiếu mới`:''}.${nPend?` ${nPend} trang chưa hợp lệ được giữ ở mục "Chờ làm rõ".`:''}${nDup?` Bỏ qua ${nDup} trang đã nhập hoặc đã nằm trong hàng chờ.`:''}`)}
 });
 function xiPanel(){const X=V.xi,P=xiPlan(),ok=P.filter(r=>r.ok),tot=ok.reduce((t,r)=>t+r.p.calc,0),srcs=X.mSel==='new'?[]:D.sources.filter(s=>s.marketId===+X.mSel);
- return `<div class="note" style="margin-top:.8rem">Đã đọc file "${esc(X.file)}": nhận dạng ${X.sheets.length} bảng kê${X.ig.length?`, bỏ qua ${X.ig.length} trang không phải bảng kê (${esc(X.ig.join(', '))})`:''}. Kiểm tra rồi bấm Nhập. Trang báo lỗi sẽ không được nhập.</div>
+ return `<div class="note" style="margin-top:.8rem">Đã đọc file "${esc(X.file)}": nhận dạng ${X.sheets.length} bảng kê${X.ig.length?`, bỏ qua ${X.ig.length} trang không phải bảng kê (${esc(X.ig.join(', '))})`:''}. Kiểm tra rồi bấm Nhập. Trang hợp lệ vào sổ ngay; trang báo lỗi được giữ lại ở mục <b>Chờ làm rõ</b> để xử lý sau. Bỏ tích ô Nhập nếu muốn bỏ hẳn một trang.</div>
  <div class="inline"><label>Chợ<select onchange="A.xiM(this.value)"><option value="new" ${X.mSel==='new'?'selected':''}>Tạo chợ mới: Chợ ${esc(X.mName)}</option>${D.markets.map(m=>`<option value="${m.id}" ${X.mSel==m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
  <label>Nguồn thu<select onchange="A.xiS(this.value)"><option value="new" ${X.sSel==='new'?'selected':''}>Tạo nguồn thu mới: ${esc(X.sName)}</option>${srcs.map(s=>`<option value="${s.id}" ${X.sSel==s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label></div>
  <table><tr><th>Nhập</th><th>Trang</th><th>Kỳ thu</th><th>Người thu</th><th class="n">Dòng</th><th class="n">Ghi nhận (tính từ seri)</th><th>Kiểm tra</th></tr>
- ${P.map(r=>`<tr class="${r.errs.length?'err':''}"><td><input type="checkbox" ${r.skip?'':'checked'} ${r.errs.length?'disabled':''} onchange="A.xiSkip(${r.i},this.checked)"></td><td>${esc(r.p.name)}</td>
+ ${P.map(r=>`<tr class="${r.errs.length?'err':''}"><td><input type="checkbox" ${r.skip?'':'checked'} onchange="A.xiSkip(${r.i},this.checked)"></td><td>${esc(r.p.name)}</td>
  <td><input type="date" value="${r.from}" onchange="A.xiPeriod(${r.i},'from',this.value)"> <input type="date" value="${r.to}" onchange="A.xiPeriod(${r.i},'to',this.value)"></td>
  <td>${esc(r.p.collector)}</td><td class="n">${r.p.lines.length}</td><td class="n">${vnd(r.p.calc)}</td>
  <td>${r.errs.length?`<span class="bad">${esc(r.errs.slice(0,3).join('; '))}${r.errs.length>3?` (và ${r.errs.length-3} lỗi khác)`:''}</span>`:r.skip?'<span class="mut">Bỏ qua</span>':'<span class="ok">Hợp lệ</span>'}
  ${r.warns.map(w=>`<br><span class="warn">${esc(w)}</span>`).join('')}</td></tr>`).join('')}</table>
- <p><button ${ok.length?'':'disabled'} onclick="A.xiGo()">Nhập ${ok.length} bảng kê (${vnd(tot)} đ)</button> <span class="mut">${P.length-ok.length} trang không nhập. Số tiền trên là ghi nhận theo bảng kê, chưa phải thực thu.</span></p>`}
+ <p><button ${ok.length+P.filter(r=>!r.ok&&!r.skip).length?'':'disabled'} onclick="A.xiGo()">Nhập ${ok.length} bảng kê hợp lệ (${vnd(tot)} đ)${P.filter(r=>!r.ok&&!r.skip).length?`, chuyển ${P.filter(r=>!r.ok&&!r.skip).length} trang lỗi sang Chờ làm rõ`:''}</button> <span class="mut">Số tiền là ghi nhận theo bảng kê, chưa phải thực thu.</span></p>`}
 
 function guide(){const g=(t,b,o)=>`<details ${o?'open':''}><summary>${t}</summary>${b}</details>`;
  return `<h1>Hướng dẫn sử dụng</h1><p class="mut">Làm lần lượt từ mục 1. Mỗi phần sau cần phần trước đã có dữ liệu.</p>
@@ -315,22 +347,39 @@ function guide(){const g=(t,b,o)=>`<details ${o?'open':''}><summary>${t}</summar
  ${g('7. Theo dõi seri phiếu thu',`<ul><li>Bấm <b>Theo dõi seri</b>, chọn chợ, nguồn thu, mệnh giá. Phần mềm liệt kê các dãy seri đã ghi nhận theo thứ tự số, kèm quyển, bảng kê, kỳ thu, người thu.</li>
  <li><b>Tra cứu một số seri:</b> gõ số vào ô <b>Tra cứu số seri</b>, phần mềm cho biết số đó nằm ở bảng kê nào theo từng mệnh giá, hoặc chưa có trong bảng kê nào.</li>
  <li><b>Dòng vàng "Khoảng trống"</b> là các số seri nằm giữa hai dãy đã ghi nhận mà chưa có bảng kê nào. Có thể là phiếu chưa bán, bảng kê chưa nhập hoặc bị sót: cần đối chiếu với quyển phiếu thực tế rồi mới kết luận.</li>
- <li>Bấm <b>Xuất CSV</b> để mở danh sách bằng Excel. Bấm số bảng kê để xem chi tiết.</li></ul>`)}
- ${g('8. Sao lưu, xuất Excel, khôi phục',`<ul><li>Dữ liệu lưu <b>trong trình duyệt của máy này</b>. Máy khác hoặc trình duyệt khác sẽ không thấy. Xóa dữ liệu duyệt web sẽ mất dữ liệu.</li>
+ <li>Bấm <b>Xuất Excel</b> để tải danh sách (.xlsx, đã canh sẵn cột, dòng và khổ in A4 ngang). Bấm số bảng kê để xem chi tiết.</li></ul>`)}
+ ${g('8. Giao nhận và tồn biên lai của nhân viên thu',`<ol><li><b>Làm đầu tiên:</b> tải file "BẢNG KÊ TỔNG HỢP BIÊN LAI CHƯA QUYẾT TOÁN" và chọn <b>Tồn đầu kỳ</b> để ghi số biên lai nhân viên đang giữ. Sau đó tải hoặc nhập từng biên bản bàn giao, số lượng sẽ <b>cộng dồn</b>. Dòng có số lượng khác số seri (quyển dùng dở): chọn nút gợi ý hoặc "Chỉ ghi số lượng".</li>
+ <li>Bấm <b>Giao nhận biên lai</b>, chọn chợ. Bảng <b>Tồn biên lai theo sổ</b> cho biết từng nhân viên đã nhận, đã trả, đã dùng và còn tồn bao nhiêu biên lai, theo từng loại, kèm <b>số quyển</b> còn nguyên và quyển đang dùng dở (còn bao nhiêu số).</li>
+ <li><b>Ghi nhận tồn đầu kỳ hoặc giao thêm:</b> chọn "Giao biên lai cho nhân viên", nhập ngày, tên nhân viên, rồi mỗi dòng một loại biên lai với quyển, từ số, đến số. Bấm <b>Lưu biên bản</b>. Dãy đã giao rồi thì không giao lại được.</li>
+ <li><b>Kiểm kê tồn thực tế:</b> chọn "Kiểm kê tồn thực tế" và nhập số biên lai nhân viên đang cầm. Phần mềm so với tồn theo sổ và báo chênh lệch, kèm các số seri chênh.</li>
+ <li><b>Nhân viên trả lại:</b> chọn "Nhân viên trả lại" để trừ khỏi tồn.</li>
+ <li><b>Tải từ Excel:</b> chọn file biên bản bàn giao hoặc bảng kê chưa quyết toán. Dòng báo lỗi (số lượng khác số seri, số đến nhỏ hơn số từ) sửa ngay ô Từ số, Đến số trong bảng xem trước.</li>
+ <li><b>Tính theo ngày:</b> biên lai được tính từ <b>ngày ghi trên biên bản</b> (ví dụ tồn đầu kỳ 15/10, giao thêm 27/10). Chỉ trừ các bảng kê có <b>kỳ thu kết thúc sau ngày đó</b>. Ô <b>Tính tồn tại ngày</b> cho xem tồn ở một ngày bất kỳ; để trống là đến hiện tại. Kiểm kê được so với số tồn của sổ <b>tại đúng ngày kiểm kê</b>.</li>
+ <li><b>Ngày chốt số liệu:</b> mỗi biên bản có ô <b>Số liệu chốt đến hết ngày</b> (mặc định bằng ngày ghi trên biên bản). Nếu phần mềm cảnh báo "số vẫn nằm trong tồn nhưng bảng kê ghi đã thu từ kỳ trước ngày nhận", nghĩa là số liệu thực tế được chốt sớm hơn ngày ghi trên biên bản: hãy đặt lại ngày chốt (ở bảng xem trước khi nhập hoặc ở Lịch sử giao nhận) cho đúng thực tế.</li>
+ <li>"Đã dùng" lấy từ bảng kê có <b>tên người thu trùng với tên nhân viên</b>, nên hãy gõ tên thống nhất. Số seri đã dùng mà chưa ghi nhận giao sẽ báo đỏ.</li>
+ <li>Nhập nhầm biên bản thì bấm <b>Hủy</b> ở lịch sử, biên bản vẫn lưu trong nhật ký nhưng không tính vào tồn.</li></ol>`)}
+ ${g('9. Chờ làm rõ: dòng chưa hợp lệ nhập sau',`<ul><li>Khi tải file Excel (bảng kê hoặc giao nhận biên lai), <b>dòng hoặc trang hợp lệ vào sổ ngay</b>. Dòng hoặc trang chưa hợp lệ <b>không bị mất</b>: được giữ ở mục <b>Chờ làm rõ</b> (có số lượng trên thanh menu).</li>
+ <li>Mở <b>Chờ làm rõ</b>, xác minh với thực tế rồi sửa ngày, người thu, số seri ngay tại bảng. Cột bên cạnh cho biết còn lỗi gì. Khi hết lỗi, nút <b>Nhập</b> mới bấm được.</li>
+ <li>Với biên lai: có nút gợi ý (còn số cuối, còn số đầu, chỉ ghi số lượng), <b>do bạn chọn</b>, phần mềm không tự quyết.</li>
+ <li>Bảng kê chờ: bấm <b>Bỏ dòng</b> nếu dòng đó không đúng; bấm <b>Nhập tất cả … mục đã hợp lệ</b> để nhập cả loạt.</li>
+ <li>Mục không cần nữa thì bấm <b>Xóa</b>. Tải lại cùng file thì các dòng đã nhập trước đó được bỏ qua, không bị nhân đôi.</li></ul>`)}
+ ${g('10. Sao lưu, xuất Excel, khôi phục',`<ul><li>Dữ liệu lưu <b>trong trình duyệt của máy này</b>. Máy khác hoặc trình duyệt khác sẽ không thấy. Xóa dữ liệu duyệt web sẽ mất dữ liệu.</li>
  <li>Vào <b>Sao lưu</b>, bấm <b>Tải file sao lưu (.json)</b> sau mỗi lần nhập nhiều. Nên cất thêm một bản vào USB hoặc đám mây.</li>
- <li><b>Xuất bảng kê ra Excel (.csv)</b> để mở bằng Excel.</li>
+ <li><b>Xuất bảng kê ra Excel (.xlsx)</b> file .xlsx đã định dạng sẵn: độ rộng cột, xuống dòng trong ô, đường kẻ, tiêu đề cố định, in A4 ngang vừa chiều rộng trang và lặp tiêu đề mỗi trang.</li>
+ <li><b>Xuất tồn biên lai theo sổ (đến hiện tại)</b>: mỗi dòng là một nhân viên và một loại biên lai, gồm đã nhận, đã trả, đã dùng, tồn, quyển còn nguyên, quyển dở, seri còn tồn và kết quả kiểm kê. Tất cả các chợ trong một file.</li>
  <li><b>Khôi phục</b>: chọn file .json đã sao lưu, phần mềm thay toàn bộ dữ liệu hiện tại bằng bản sao lưu.</li>
  <li>Cuối trang có <b>nhật ký thao tác</b> và nút <b>Xóa toàn bộ dữ liệu</b> (hãy sao lưu trước).</li></ul>`)}
- ${g('9. Gặp lỗi thường gặp',`<ul><li><b>Nút Thêm hoặc Lưu không chạy:</b> chưa nhập tên vào ô Người đang thao tác.</li>
+ ${g('11. Gặp lỗi thường gặp',`<ul><li><b>Nút Thêm hoặc Lưu không chạy:</b> chưa nhập tên vào ô Người đang thao tác.</li>
  <li><b>Không thấy nút Nhập bảng kê:</b> chợ đang ở trạng thái ngừng sử dụng, hoặc chưa có nguồn thu.</li>
  <li><b>"Nguồn thu chưa có loại phiếu":</b> cần khai báo mệnh giá trước ở trang chợ.</li>
  <li><b>"Người lập bảng kê không tự xác nhận":</b> đổi ô Người đang thao tác sang người khác.</li>
  <li><b>"Cần xác nhận thực thu trước":</b> ghi nhận thực thu trước khi bàn giao hoặc nộp.</li>
  <li><b>Không đọc được file Excel:</b> kiểm tra là file .xlsx, dưới 8 MB, và dùng Chrome hoặc Edge bản mới.</li>
- <li><b>Nhập nhầm dữ liệu:</b> bản này chưa sửa hoặc xóa từng dòng. Khôi phục từ file sao lưu gần nhất, hoặc xóa toàn bộ rồi nhập lại.</li></ul>`)}
- ${g('10. Giới hạn của bản chạy thử này',`<ul><li>Chưa có đăng nhập và phân quyền thật; ai mở file trên máy cũng thao tác được.</li>
+ <li><b>Xác nhận thực thu, bàn giao hoặc nộp tiền bị sai:</b> mở bảng kê, ở mục Lịch sử ghi nhận bấm <b>Sửa</b> (đổi số tiền, ngày, chứng từ, ghi chú; bắt buộc ghi lý do) hoặc <b>Hủy ghi nhận</b>. Số cũ và lý do được lưu lại. Người lập bảng kê không được sửa hoặc hủy xác nhận thực thu của chính mình. Muốn giảm số thực thu thì sửa bàn giao, nộp tiền trước; muốn hủy xác nhận thực thu thì hủy bàn giao, nộp tiền trước.</li>
+ <li><b>Nhập nhầm dòng seri trong bảng kê:</b> bản này chưa sửa từng dòng seri đã lưu. Khôi phục từ file sao lưu gần nhất, hoặc xóa toàn bộ rồi nhập lại.</li></ul>`)}
+ ${g('12. Giới hạn của bản chạy thử này',`<ul><li>Chưa có đăng nhập và phân quyền thật; ai mở file trên máy cũng thao tác được.</li>
  <li>Dùng được trên một máy, một người tại một thời điểm. Nhiều người dùng cùng lúc cần bản web nội bộ có máy chủ.</li>
- <li>Chưa có chức năng sửa, hủy dòng đã lưu, và chưa có biểu đồ.</li></ul>`)}`}
+ <li>Đã sửa, hủy được ghi nhận thực thu, bàn giao, nộp tiền; chưa sửa được từng dòng seri đã lưu trong bảng kê, và chưa có biểu đồ.</li></ul>`)}`}
 
 /* ===== Theo dõi seri phiếu thu ===== */
 function seriData(F){const mid=+(F.m||(D.markets[0]&&D.markets[0].id)||0),sid=+(F.s||0),sl=D.sources.filter(x=>x.marketId===mid),src1=sid&&sl.some(x=>x.id===sid)?sid:(sl[0]&&sl[0].id)||0,G={};
@@ -343,14 +392,14 @@ function seriData(F){const mid=+(F.m||(D.markets[0]&&D.markets[0].id)||0),sid=+(
 Object.assign(A,{sf(k,v){const F=V.sf=V.sf||{m:'',s:'',d:'',q:''};F[k]=v;if(k==='m'){F.s='';F.d=''}if(k==='s')F.d='';render()},
  seriCsv(){const F=V.sf||{m:'',s:'',d:'',q:''},R=seriData(F),rows=[['Mệnh giá','Từ seri','Đến seri','Số phiếu','Tình trạng','Quyển','Bảng kê','Kỳ thu','Người thu']];
   R.groups.forEach(g=>g.rows.forEach(r=>rows.push(r.gap?[g.face,r.a,r.b,r.qty,'Chưa có trong bảng kê nào','','','','']:[g.face,r.a,r.b,r.qty,r.dup?'Trùng dãy trên':'Đã ghi nhận',r.book,'#'+r.sh.id,r.sh.from+' đến '+r.sh.to,r.sh.collector])));
-  dl('theo-doi-seri.csv','\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv')}});
+  xlsxSave('theo-doi-seri-'+new Date().toISOString().slice(0,10)+'.xlsx','Theo d\u00f5i seri','THEO D\u00d5I SERI PHI\u1ebeU THU',rows,[11,11,11,10,26,18,10,26,22])}});
 function seri(){const F=V.sf=V.sf||{m:'',s:'',d:'',q:''};if(!D.markets.length)return '<h1>Theo dõi seri</h1><p class="mut">Chưa có chợ. Hãy khai báo chợ và nhập bảng kê trước.</p>';
  const R=seriData(F),q=int(F.q),dens=[...new Set(D.sheets.filter(x=>x.marketId===R.mid&&x.sourceId===R.src).flatMap(x=>x.lines.map(l=>l.face)))].sort((a,b)=>a-b);
  const hit=q===null?'':R.groups.map(g=>{const r=g.rows.find(x=>!x.gap&&x.a<=q&&q<=x.b);return `<tr><td class="n">${vnd(g.face)} đ</td><td>${r?`<span class="ok">Đã ghi nhận</span> trong <a onclick="go('sheet',{sid:${r.sh.id}})">bảng kê #${r.sh.id}</a> (dãy ${r.a}-${r.b}, kỳ ${r.sh.from} đến ${r.sh.to}, người thu ${esc(r.sh.collector)})`:'<span class="warn">Chưa có trong bảng kê nào</span>'}</td></tr>`}).join('');
  return `<h1>Theo dõi seri phiếu thu</h1><div class="inline"><label>Chợ<select onchange="A.sf('m',this.value)">${D.markets.map(m=>`<option value="${m.id}" ${R.mid===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
  <label>Nguồn thu<select onchange="A.sf('s',this.value)">${R.sl.map(x=>`<option value="${x.id}" ${R.src===x.id?'selected':''}>${esc(x.name)}</option>`).join('')||'<option>(chưa có)</option>'}</select></label>
  <label>Mệnh giá<select onchange="A.sf('d',this.value)"><option value="">Tất cả</option>${dens.map(f=>`<option value="${f}" ${+F.d===f?'selected':''}>${vnd(f)} đ</option>`).join('')}</select></label>
- <label>Tra cứu số seri<input type="number" min="1" style="width:9rem" value="${esc(F.q)}" placeholder="Gõ số seri" onchange="A.sf('q',this.value)"></label><button class="sec" onclick="A.seriCsv()">Xuất CSV</button></div>
+ <label>Tra cứu số seri<input type="number" min="1" style="width:9rem" value="${esc(F.q)}" placeholder="Gõ số seri" onchange="A.sf('q',this.value)"></label><button class="sec" onclick="A.seriCsv()">Xuất Excel</button></div>
  ${q!==null?`<h2>Kết quả tra cứu seri ${q}</h2><table>${hit||'<tr><td class="mut">Chưa có dữ liệu.</td></tr>'}</table>`:''}
  <p class="mut">Mỗi mệnh giá có dãy seri riêng. "Khoảng trống" là các số seri nằm giữa hai dãy đã ghi nhận nhưng chưa xuất hiện trong bảng kê nào (có thể là phiếu chưa bán, chưa nhập hoặc bị sót, cần đối chiếu với quyển phiếu thực tế).</p>
  ${R.groups.map(g=>`<h2>Phiếu ${vnd(g.face)} đồng</h2><p>Đã ghi nhận <b>${vnd(g.used)}</b> phiếu trong ${g.n} dãy, seri từ ${g.min} đến ${g.max}.
@@ -358,8 +407,230 @@ function seri(){const F=V.sf=V.sf||{m:'',s:'',d:'',q:''};if(!D.markets.length)re
  <table><tr><th class="n">Từ seri</th><th class="n">Đến seri</th><th class="n">Số phiếu</th><th>Quyển</th><th>Bảng kê</th><th>Kỳ thu</th><th>Người thu</th></tr>
  ${g.rows.map(r=>r.gap?`<tr class="gap"><td class="n">${r.a}</td><td class="n">${r.b}</td><td class="n">${vnd(r.qty)}</td><td colspan="4" class="warn">Khoảng trống: chưa có trong bảng kê nào</td></tr>`
  :`<tr class="${r.dup?'err':''}"><td class="n">${r.a}</td><td class="n">${r.b}</td><td class="n">${vnd(r.qty)}</td><td>${esc(r.book)}</td><td><a onclick="go('sheet',{sid:${r.sh.id}})">#${r.sh.id}</a></td><td>${r.sh.from} đến ${r.sh.to}</td><td>${esc(r.sh.collector)}</td></tr>`).join('')}</table>`).join('')||'<p class="mut">Nguồn thu này chưa có bảng kê nào.</p>'}`}
-function render(){const v=V.view;document.getElementById('app').innerHTML={home,markets,entry,sheets,sheet,seri,backup,guide}[v]();
- document.querySelectorAll('header [data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='entry'?'markets':v==='sheet'?'sheets':v)));
+
+/* ===== Giao nhận và tồn biên lai của nhân viên thu ===== */
+const FIXED=['Phiếu thu dịch vụ (không mệnh giá)','Phiếu thu 3 liên mẫu số 01-TT'],KS={tondau:'Tồn đầu kỳ chưa quyết toán',giao:'Giao biên lai cho nhân viên',tra:'Nhân viên trả lại',kiemke:'Kiểm kê tồn thực tế'};
+const tkey=(f,l)=>f?'F'+f:'L'+norm(l),tname=(f,l)=>f?`Phiếu ${vnd(f)} đồng`:l;
+const mergeR=a=>{a=a.map(x=>[x[0],x[1]]).sort((x,y)=>x[0]-y[0]);const o=[];a.forEach(r=>{const l=o[o.length-1];if(l&&r[0]<=l[1]+1)l[1]=Math.max(l[1],r[1]);else o.push(r)});return o};
+const subR=(a,b)=>{a=mergeR(a);b=mergeR(b);const o=[];a.forEach(r=>{let s=r[0];b.forEach(x=>{if(x[1]<s||x[0]>r[1])return;if(x[0]>s)o.push([s,x[0]-1]);s=Math.max(s,x[1]+1)});if(s<=r[1])o.push([s,r[1]])});return o};
+const cntR=a=>a.reduce((t,r)=>t+r[1]-r[0]+1,0),interR=(a,b)=>subR(a,subR(a,b));
+const txtR=a=>a.length?a.slice(0,5).map(r=>r[0]===r[1]?r[0]:r[0]+'-'+r[1]).join('; ')+(a.length>5?` (+${a.length-5} dãy)`:''):'không có';
+/* Quyển số suy ra từ seri: phiếu có mệnh giá 100 số/quyển (VD quyển 35 = 3401-3500); phiếu không mệnh giá 50 số/quyển (VD quyển 73 = 3601-3650) */
+const bookSize=(face,label)=>face?100:50;
+function bookInfo(ranges,size){const per={};mergeR(ranges).forEach(([a,b])=>{for(let k=Math.ceil(a/size);k<=Math.ceil(b/size);k++){const s=Math.max(a,(k-1)*size+1),e=Math.min(b,k*size);(per[k]=per[k]||[]).push([s,e])}});
+ const full=[],part=[],g=[];Object.keys(per).map(Number).sort((x,y)=>x-y).forEach(k=>{const r=mergeR(per[k]),n=cntR(r);if(n===size)full.push(k);else part.push({k,r,n})});
+ full.forEach(k=>{const l=g[g.length-1];if(l&&k===l[1]+1)l[1]=k;else g.push([k,k])});return{full,part,g}}
+function bookHtml(rs,face,label){if(!rs||!rs.length)return '';const sz=bookSize(face,label),B=bookInfo(rs,sz),p=[];
+ if(B.full.length)p.push(`<b>Nguyên ${vnd(B.full.length)} quyển:</b> ${B.g.map(r=>r[0]===r[1]?r[0]:r[0]+'–'+r[1]).join(', ')}`);
+ if(B.part.length)p.push(`<b>Dở ${B.part.length} quyển:</b> `+B.part.slice(0,6).map(x=>`quyển ${x.k} (còn ${vnd(x.n)}/${sz} số: ${txtR(x.r)})`).join('; ')+(B.part.length>6?` (+${B.part.length-6} quyển dở)`:''));
+ return p.join('<br>')}
+/* ===== Xuất Excel (.xlsx) có định dạng sẵn, không cần thư viện ngoài ===== */
+const crcT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=crcT[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0};
+function zipStore(files){const te=new TextEncoder(),parts=[],cen=[];let off=0;
+ files.forEach(([name,txt])=>{const nb=te.encode(name),d=te.encode(txt),crc=crc32(d),h=new DataView(new ArrayBuffer(30));
+  h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(12,0x21,true);h.setUint32(14,crc,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nb.length,true);
+  parts.push(new Uint8Array(h.buffer),nb,d);
+  const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(14,0x21,true);c.setUint32(16,crc,true);c.setUint32(20,d.length,true);c.setUint32(24,d.length,true);c.setUint16(28,nb.length,true);c.setUint32(42,off,true);
+  cen.push(new Uint8Array(c.buffer),nb);off+=30+nb.length+d.length});
+ const cl=cen.reduce((t,x)=>t+x.length,0),e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cl,true);e.setUint32(16,off,true);
+ return new Blob([...parts,...cen,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})}
+const xe=s=>String(s??'').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+/* rows[0] là dòng tiêu đề cột; widths là độ rộng cột (số ký tự); số (number) được canh phải và có dấu phân cách hàng nghìn */
+function xlsxSave(fname,sheet,title,rows,widths){const head=rows[0],body=rows.slice(1),nc=head.length,last=colName(nc-1),now=new Date(),H=4,
+ sh=sheet.replace(/[\\\/?*\[\]:']/g,' ').slice(0,31),
+ sub=`Xuất ngày ${now.toLocaleDateString('vi-VN')} lúc ${now.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}. Người thao tác: ${D.op||'-'}`,
+ cell=(c,r,v,s)=>{const ref=colName(c)+r;return typeof v==='number'&&Number.isFinite(v)?`<c r="${ref}" s="${s}"><v>${v}</v></c>`:`<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xe(v)}</t></is></c>`},
+ nl=(v,w)=>String(v??'').split('\n').reduce((t,x)=>t+Math.max(1,Math.ceil(x.length*1.1/Math.max(1,w-1))),0),
+ ht=(r,sty)=>Math.max(1,...r.map((v,i)=>typeof v==='number'?1:nl(v,widths[i]||12)))*15+(sty===3?6:3);
+ let x=`<row r="1" ht="24" customHeight="1">${cell(0,1,title,1)}</row><row r="2">${cell(0,2,sub,2)}</row><row r="${H}" ht="${ht(head,3)}" customHeight="1">${head.map((v,i)=>cell(i,H,v,3)).join('')}</row>`;
+ body.forEach((r,k)=>{const n=H+1+k;x+=`<row r="${n}" ht="${ht(r,4)}" customHeight="1">${r.map((v,i)=>cell(i,n,v,typeof v==='number'?5:4)).join('')}</row>`});
+ const sheetXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${last}${H+body.length}"/>
+<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${H}" topLeftCell="A${H+1}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>
+<cols>${head.map((_,i)=>`<col min="${i+1}" max="${i+1}" width="${widths[i]||12}" customWidth="1"/>`).join('')}</cols><sheetData>${x}</sheetData><mergeCells count="2"><mergeCell ref="A1:${last}1"/><mergeCell ref="A2:${last}2"/></mergeCells>
+<printOptions horizontalCentered="1"/><pageMargins left="0.4" right="0.4" top="0.6" bottom="0.7" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/><headerFooter><oddFooter>&amp;LThu chợ - Bình Kiến&amp;CTrang &amp;P / &amp;N&amp;R&amp;D</oddFooter></headerFooter></worksheet>`,
+ bd='<border><left style="thin"><color rgb="FF9FB0B6"/></left><right style="thin"><color rgb="FF9FB0B6"/></right><top style="thin"><color rgb="FF9FB0B6"/></top><bottom style="thin"><color rgb="FF9FB0B6"/></bottom><diagonal/></border>',
+ styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="14"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><i/><sz val="10"/><color rgb="FF5B6B72"/><name val="Arial"/></font></fonts>
+<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F5C63"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>${bd}</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
+<xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf></cellXfs></styleSheet>`,
+ R='http://schemas.openxmlformats.org/officeDocument/2006/relationships',P='http://schemas.openxmlformats.org/package/2006/relationships',
+ blob=zipStore([['[Content_Types].xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+  ['_rels/.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${P}"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+  ['xl/workbook.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheets><sheet name="${xe(sh)}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Titles" localSheetId="0">'${xe(sh)}'!$${H}:$${H}</definedName></definedNames></workbook>`],
+  ['xl/_rels/workbook.xml.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${P}"><Relationship Id="rId1" Type="${R}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${R}/styles" Target="styles.xml"/></Relationships>`],
+  ['xl/styles.xml',styles],['xl/worksheets/sheet1.xml',sheetXml]]),a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);a.download=fname;a.click()}
+Object.assign(A,{stockCsv(){const rows=[['Chợ','Nhân viên thu','Loại biên lai','Đã nhận','Đã trả','Đã dùng','Tồn theo sổ','Quyển còn nguyên','Số quyển nguyên','Quyển dở (còn bao nhiêu số)','Seri còn tồn','Chưa rõ seri','Kiểm kê gần nhất (ngày)','Số kiểm kê','Đối chiếu']],
+  allR=r=>r.length?r.map(x=>x[0]===x[1]?x[0]:x[0]+'-'+x[1]).join('; '):'';
+  D.markets.forEach(m=>stockCalc(m.id).forEach(x=>{const B=bookInfo(x.book,bookSize(x.face,x.label)),sz=bookSize(x.face,x.label);
+   const dv=x.kk?(x.gap===0&&!x.diffA.length&&!x.diffB.length?'Khớp kiểm kê':`Chênh lệch ${x.gap} phiếu`):'';
+   rows.push([m.name,x.staff,tname(x.face,x.label),cntR(x.rec)+x.loose,cntR(x.ret),x.hasUse?cntR(x.usedIn):'',x.total,B.g.map(r=>r[0]===r[1]?r[0]:r[0]+'-'+r[1]).join('; '),B.full.length,
+    B.part.map(p=>`quyển ${p.k} (còn ${p.n}/${sz}: ${allR(p.r)})`).join('; '),allR(x.book),x.loose||'',x.kk?x.kk.date:'',x.kk?cntR(x.kk.r):'',dv])}));
+  xlsxSave('ton-bien-lai-theo-so-'+new Date().toISOString().slice(0,10)+'.xlsx','Tồn biên lai theo sổ','TỒN BIÊN LAI THEO SỔ (ĐẾN HIỆN TẠI)',rows,[16,22,30,10,9,9,11,22,10,46,36,10,14,10,22])}});
+function stockCalc(mid,asof){asof=asof||'9999-12-31';const docs=D.stock.filter(d=>d.marketId===mid&&!d.void),G={},g=(st,f,l)=>{const k=norm(st)+'|'+tkey(f,l);return G[k]=G[k]||{staff:st,face:f,label:l,recs:[],rets:[],looses:[],first:'',kks:[]}};
+ docs.forEach(d=>d.lines.forEach(l=>{const dd=d.eff||d.date,x=g(d.staff,l.face,l.label);if(d.kind==='giao'||d.kind==='tondau'){if(l.loose)x.looses.push({qty:l.qty,a:l.a,b:l.b,date:dd});else x.recs.push({a:l.a,b:l.b,date:dd});if(!x.first||dd<x.first)x.first=dd}
+  else if(d.kind==='tra')x.rets.push({a:l.a,b:l.b,date:dd});else if(d.kind==='kiemke'){let k=x.kks.find(z=>z.id===d.id);if(!k)x.kks.push(k={id:d.id,date:dd,r:[]});k.r.push([l.a,l.b])}}));
+ const used={};D.sheets.filter(s=>s.marketId===mid).forEach(s=>s.lines.forEach(l=>{g(s.collector,l.face,'');const k=norm(s.collector)+'|F'+l.face;(used[k]=used[k]||[]).push({r:[l.a,l.b],to:s.to})}));
+ /* Tồn tại ngày "at": chỉ tính biên lai nhận từ ngày nhận trở đi; chỉ trừ bảng kê có kỳ thu kết thúc SAU ngày nhận và KHÔNG sau ngày "at" */
+ const calc=(x,us,at)=>{const recs=x.recs.filter(r=>r.date<=at),rets=mergeR(x.rets.filter(r=>r.date<=at).map(r=>[r.a,r.b])),lo=x.looses.filter(l=>l.date<=at),use=us.filter(u=>u.to<=at);let book=[],ui=[];
+  recs.forEach(r=>{const R=[[r.a,r.b]],u=mergeR(use.filter(u=>u.to>r.date).map(u=>u.r));book=book.concat(subR(R,u));ui=ui.concat(interR(u,R))});
+  book=subR(mergeR(book),rets);const loose=lo.reduce((t,l)=>t+l.qty,0);return{book,usedIn:mergeR(ui),rec:mergeR(recs.map(r=>[r.a,r.b])),ret:rets,loose,total:cntR(book)+loose}};
+ return Object.entries(G).map(([k,x])=>{const us=x.face?(used[k]||[]):[],c=calc(x,us,asof),allRec=mergeR(x.recs.map(r=>[r.a,r.b])),looseR=x.looses.filter(l=>l.b>=l.a).map(l=>[l.a,l.b]),inA=us.filter(u=>u.to<=asof);
+  const out=subR(subR(mergeR(inA.filter(u=>!x.first||u.to>x.first).map(u=>u.r)),allRec),looseR),
+   early=mergeR(x.recs.filter(r=>r.date<=asof).flatMap(r=>interR(mergeR(inA.filter(u=>u.to<=r.date).map(u=>u.r)),[[r.a,r.b]]))),
+   kk=x.kks.filter(z=>z.date<=asof).sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id).pop(),r={...x,...c,out,early,hasUse:!!x.face};
+  if(kk){const K={date:kk.date,r:mergeR(kk.r)},bk=calc(x,us,kk.date);r.kk=K;r.kkBook=bk;r.diffA=subR(bk.book,K.r);r.diffB=subR(K.r,bk.book);r.gap=bk.total-cntR(K.r)}return r}).sort((a,b)=>a.staff.localeCompare(b.staff)||a.face-b.face)}
+function stockPivot(calc){const staffs=[...new Set(calc.map(x=>x.staff))],types=[];calc.forEach(x=>{const k=tkey(x.face,x.label);if(!types.some(t=>t.k===k))types.push({k,face:x.face,label:x.label})});types.sort((a,b)=>a.face-b.face);
+ return{staffs,types,val:(st,k)=>calc.filter(x=>norm(x.staff)===norm(st)&&tkey(x.face,x.label)===k).reduce((t,x)=>t+x.total,0)}}
+function stockConflict(mid,l,extra){const hit=[];D.stock.filter(d=>d.marketId===mid&&!d.void&&(d.kind==='giao'||d.kind==='tondau')).forEach(d=>d.lines.forEach(x=>{if(!x.loose&&tkey(x.face,x.label)===tkey(l.face,l.label)&&x.a<=l.b&&l.a<=x.b)hit.push(`biên bản #${d.id} (${x.a}-${x.b})`)}));
+ (extra||[]).forEach(x=>{if(tkey(x.face,x.label)===tkey(l.face,l.label)&&x.a<=l.b&&l.a<=x.b)hit.push(`dòng ${x.row||'trên'} cùng biên bản/file`)});return hit}
+const mkMarket=name=>{const base=(norm(name).split(' ').filter(Boolean).map(x=>x[0]).join('')||'C').toUpperCase();let c=base,k=2;while(D.markets.some(x=>x.code===c))c=base+k++;const m={id:nid(),code:c,name:'Chợ '+name,address:'',active:true};D.markets.push(m);return m};
+Object.assign(A,{
+ stEff(id,v){if(!need())return;const d=D.stock.find(x=>x.id===id);if(!d||!v)return;d.eff=v!==d.date?v:undefined;log('Đổi ngày chốt số liệu',`#${id}: ${v}`);save();render()},
+ sbEff(di,v){V.sb.eff[di]=v;render()},
+ sk(k,v){const F=V.stf=V.stf||{m:'',s:''};F[k]=v;if(k==='m')F.s='';render()},
+ sdSet(k,v){V.sd[k]=v},sdRow(i,k,v){const r=V.sd.rows[i];r[k]=v;const a=int(r.a),b=int(r.b),q=document.getElementById('sdq'+i);if(q)q.textContent=a!==null&&b!==null&&b>=a?vnd(b-a+1):'-'},
+ sdAdd(){V.sd.rows.push({t:'',book:'',a:'',b:''});render()},sdDel(i){V.sd.rows.splice(i,1);if(!V.sd.rows.length)V.sd.rows.push({t:'',book:'',a:'',b:''});render()},
+ sdSave(mid){if(!need())return;const F=V.sd,lines=[],errs=[];
+  if(!F.date||!F.staff.trim())errs.push('Nhập ngày và tên nhân viên thu');
+  F.rows.forEach((r,i)=>{const a=int(r.a),b=int(r.b);if(!r.t){errs.push(`Dòng ${i+1}: chưa chọn loại biên lai`);return}
+   if(a===null||b===null||a<1||b<a){errs.push(`Dòng ${i+1}: số seri không hợp lệ`);return}
+   const l={row:i+1,face:r.t[0]==='F'?+r.t.slice(1):0,label:r.t[0]==='L'?r.t.slice(1):'',book:r.book.trim(),a,b,qty:b-a+1};
+   if(F.kind==='giao'||F.kind==='tondau'){const h=stockConflict(mid,l,lines);if(h.length)errs.push(`Dòng ${i+1}: trùng dãy đã giao ở ${h.join(', ')}`)}lines.push(l)});
+  if(errs.length){alert(errs.join('\n'));return}
+  D.stock.push({id:nid(),kind:F.kind,date:F.date,marketId:mid,staff:F.staff.trim(),giver:F.giver.trim(),lines,by:D.op});log(KS[F.kind],`biên bản #${D.seq-1}`);save();V.sd=null;render()},
+ voidStock(id){if(!need())return;const d=D.stock.find(x=>x.id===id);if(d&&confirm('Hủy biên bản này? Biên bản bị hủy vẫn lưu trong nhật ký nhưng không tính vào tồn.')){d.void=true;log('Hủy biên bản giao nhận','#'+id);save();render()}},
+ async sb(inp){const f=inp.files[0];if(!f)return;try{const docs=(await readXlsx(f)).map(parseStock).filter(Boolean);if(!docs.length)throw new Error('Không nhận dạng được biên bản. Cần tiêu đề "BẢNG KÊ BÀN GIAO PHIẾU THU" hoặc "BẢNG KÊ TỔNG HỢP BIÊN LAI CHƯA QUYẾT TOÁN".');
+  const m=D.markets.find(m=>norm(m.name).includes(norm(docs[0].marketName)));V.sb={file:f.name,docs,edits:{},staff:{},use:{},eff:{},mSel:m?String(m.id):'new'};render()}catch(e){alert(e.message||'Không đọc được file')}},
+ sbEdit(di,li,k,v){const e=V.sb.edits[di+'_'+li]=V.sb.edits[di+'_'+li]||{};e[k]=v;render()},sbM(v){V.sb.mSel=v;render()},sbUse(di,v){V.sb.use[di]=v;render()},
+ sbFix(di,li,mode){const l=sbPlan()[di].lines[li],e=V.sb.edits[di+'_'+li]=V.sb.edits[di+'_'+li]||{},q=l.qf;
+  if(mode==='typo')e.b=String(l.a+q-1);else if(mode==='last')e.a=String(l.b-q+1);else if(mode==='first')e.b=String(l.a+q-1);else if(mode==='loose')e.loose=true;else if(mode==='unloose')e.loose=false;render()},sbStaff(di,v){V.sb.staff[di]=v;render()},
+ sbGo(){if(!need())return;const X=V.sb,P=sbPlan();let m=null,nOk=0,nPend=0,nDup=0;const getM=()=>m||(m=X.mSel==='new'?mkMarket(X.docs[0].marketName):mk(+X.mSel));
+  P.forEach(d=>{const docOk=!d.errs.length,good=docOk?d.lines.filter(l=>!l.er.length):[],bad=d.lines.filter(l=>!docOk||l.er.length),mid=X.mSel==='new'?(m?m.id:-1):+X.mSel;
+   if(good.length){D.stock.push({id:nid(),kind:d.kind,date:d.date,eff:X.eff[d.di]&&X.eff[d.di]!==d.date?X.eff[d.di]:undefined,marketId:getM().id,staff:d.staff,giver:d.giver,witness:d.witness,file:X.file,by:D.op,
+    lines:good.map(l=>({face:l.face,label:l.label,book:l.book,a:l.a,b:l.b,qty:l.loose?l.qty:l.b-l.a+1,loose:l.loose||undefined,src:X.file+'#'+l.row}))});nOk+=good.length}
+   bad.forEach(l=>{if(D.pending.some(x=>x.type==='stock'&&x.file===X.file&&x.row===l.row&&x.kind===d.kind&&tkey(x.face,x.label)===tkey(l.face,l.label))){nDup++;return}
+    if(D.stock.some(x=>!x.void&&x.kind===d.kind&&x.lines.some(y=>y.src===X.file+'#'+l.row))){nDup++;return}
+    if(D.stock.some(x=>!x.void&&x.marketId===mid&&x.kind===d.kind&&x.lines.some(y=>!y.loose&&tkey(y.face,y.label)===tkey(l.face,l.label)&&y.a===l.a&&y.b===l.b))){nDup++;return}
+    D.pending.push({id:nid(),type:'stock',kind:d.kind,date:d.date,eff:X.eff[d.di]&&X.eff[d.di]!==d.date?X.eff[d.di]:undefined,staff:d.staff,giver:d.giver,witness:d.witness,file:X.file,marketId:mid>0?mid:null,marketName:d.marketName,
+     face:l.face,label:l.label,book:l.book,a:String(Number.isFinite(l.a)?l.a:''),b:String(Number.isFinite(l.b)?l.b:''),qf:l.qf,loose:false,row:l.row,note:(docOk?l.er:d.errs.concat(l.er)).join('; ')});nPend++})});
+  log('Nhập biên bản giao nhận từ Excel',`${nOk} dòng vào sổ, ${nPend} dòng chờ làm rõ (${X.file})`);save();V.sb=null;render();
+  alert(`Đã nhập ${nOk} dòng vào sổ.${nPend?` ${nPend} dòng chưa hợp lệ được giữ ở mục "Chờ làm rõ".`:''}${nDup?` Bỏ qua ${nDup} dòng đã nhập hoặc đã nằm trong hàng chờ.`:''}`)}});
+function parseStock(sh){const R=sh.rows,top=R.slice(0,14).map(flat),title=top.find(t=>/BẢNG KÊ/i.test(t))||'',kind=/BÀN GIAO/i.test(title)?'giao':/CHƯA QUYẾT TOÁN/i.test(title)?'kiemke':null;if(!kind)return null;
+ const dm=/ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i.exec(top.join(' ')),iso=dm?`${dm[3]}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`:'',mn=/Phục vụ Chợ\s*:\s*(.+)$/i.exec(top.find(t=>/Phục vụ Chợ/i.test(t))||''),d={kind,date:iso,marketName:mn?mn[1].trim():'',staff:'',giver:'',witness:'',sheet:sh.name,lines:[]};
+ top.forEach(t=>{const m=/^-\s*(?:Ông|Bà)\s+(.+?),\s*(.+)$/i.exec(t);if(!m)return;if(/nhân viên thu/i.test(m[2]))d.staff=m[1].trim();else if(/kế toán/i.test(m[2]))d.giver=m[1].trim();else if(/tổ trưởng/i.test(m[2]))d.witness=m[1].trim()});
+ let hi=-1,C={};for(let i=0;i<Math.min(R.length,20)&&hi<0;i++){const c={};(R[i]||[]).forEach((v,j)=>{const n=norm(v);if(/^tu so/.test(n))c.a=j;else if(/^den so/.test(n))c.b=j;else if(/quyen/.test(n))c.book=j;else if(/noi dung/.test(n))c.name=j;else if(/so luo?ng/.test(n))c.qty=j});if(c.a!=null&&c.b!=null&&c.name!=null){hi=i;C=c}}
+ if(hi<0)return null;let cur='';
+ for(let r=hi+1;r<R.length;r++){const row=R[r]||[],nm=String(row[C.name]??'').trim();if(nm)cur=nm;const a=Number(row[C.a]),b=Number(row[C.b]);if(!/\d/.test(String(row[C.a]??'')+String(row[C.b]??'')))continue;
+  const fm=/(\d[\d.]*)\s*đ/i.exec(cur),face=fm?int(fm[1].replace(/\./g,''))||0:0,label=face?'':(/không có mệnh giá/i.test(cur)?FIXED[0]:/3 liên/i.test(cur)?FIXED[1]:cur.replace(/^Phiếu thu\s*/i,'Phiếu thu ').trim());
+  const qf=C.qty!=null&&row[C.qty]!=null&&String(row[C.qty]).trim()!==''?Number(row[C.qty]):null;d.lines.push({row:r+1,face,label,book:String(row[C.book]??'').replace(/\s+/g,' ').trim(),a,b,qf})}
+ return d.lines.length?d:null}
+function sbPlan(){const X=V.sb,m=X.mSel==='new'?null:mk(+X.mSel),seen=[];return X.docs.map((d,di)=>{const kind=d.kind==='kiemke'?(X.use[di]||'tondau'):d.kind,isIn=kind==='giao'||kind==='tondau',staff=(X.staff[di]??d.staff).trim(),errs=[],
+ lines=d.lines.map((l,li)=>{const e=X.edits[di+'_'+li]||{},a=e.a!==undefined?int(e.a):l.a,b=e.b!==undefined?int(e.b):l.b,er=[];
+  if(e.loose&&l.qf!==null&&l.qf>0)return{...l,a:Number.isInteger(a)?a:0,b:Number.isInteger(b)?b:0,loose:true,qty:l.qf,er};
+  if(!Number.isInteger(a)||!Number.isInteger(b)||a<1)er.push('Số không hợp lệ');else if(b<a)er.push(`Số đến (${b}) nhỏ hơn số từ (${a})`);
+  else{if(l.qf!==null&&l.qf!==b-a+1)er.push(`Số lượng ghi ${l.qf} khác số tính từ seri ${b-a+1}`);
+   if(isIn){const h=stockConflict(m?m.id:-1,{face:l.face,label:l.label,a,b},seen);if(h.length)er.push('Trùng dãy đã nhận: '+h.join(', '))}}
+  if(!er.length&&isIn)seen.push({face:l.face,label:l.label,a,b,row:l.row});return{...l,a,b,er}});
+ if(!d.date)errs.push('Không đọc được ngày biên bản');if(!staff)errs.push('Thiếu tên nhân viên thu');return{...d,orig:d.kind,kind,di,staff,lines,errs,ok:!errs.length&&lines.every(l=>!l.er.length)}})}
+function sbPanel(){const X=V.sb,P=sbPlan(),nL=P.reduce((t,d)=>t+(d.errs.length?0:d.lines.filter(l=>!l.er.length).length),0),nB=P.reduce((t,d)=>t+d.lines.length,0)-nL,bt=(di,li,m,t)=>`<button class="sec" onclick="A.sbFix(${di},${li},'${m}')">${t}</button> `;
+ const fix=(d,l,li)=>{if(l.loose)return bt(d.di,li,'unloose','Bỏ, nhập lại theo seri');if(!l.er.length||l.qf==null)return '';const ok=Number.isInteger(l.a)&&Number.isInteger(l.b)&&l.a>0;let h='';
+  if(ok&&l.b<l.a)h+=bt(d.di,li,'typo',`Đến số = ${l.a+l.qf-1}`);else if(ok&&l.qf<l.b-l.a+1)h+=bt(d.di,li,'last',`Còn ${l.qf} số cuối (${l.b-l.qf+1}-${l.b})`)+bt(d.di,li,'first',`Còn ${l.qf} số đầu (${l.a}-${l.a+l.qf-1})`);
+  return '<br>'+h+bt(d.di,li,'loose',`Chỉ ghi số lượng ${l.qf} (chưa rõ seri)`)};
+ return `<div class="note" style="margin-top:.8rem">Đã đọc file "${esc(X.file)}": ${P.length} biên bản. Dòng báo lỗi: sửa ô <b>Từ số</b>, <b>Đến số</b>, hoặc bấm nút gợi ý (do bạn chọn, phần mềm không tự quyết). Dòng hợp lệ vào sổ ngay; dòng còn lỗi được giữ lại ở mục <b>Chờ làm rõ</b> để làm rõ rồi nhập sau.</div>
+ <div class="inline"><label>Chợ<select onchange="A.sbM(this.value)"><option value="new" ${X.mSel==='new'?'selected':''}>Tạo chợ mới: Chợ ${esc(X.docs[0].marketName)}</option>${D.markets.map(m=>`<option value="${m.id}" ${X.mSel==m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label></div>
+ ${P.map(d=>`<h2>${KS[d.kind]} - ngày ${d.date||'?'}</h2><div class="inline"><label>Nhân viên thu<input value="${esc(d.staff)}" onchange="A.sbStaff(${d.di},this.value)"></label>
+ <label>Số liệu chốt đến hết ngày<input type="date" value="${X.eff[d.di]||d.date}" onchange="A.sbEff(${d.di},this.value)"></label>
+ ${d.orig==='kiemke'?`<label>Dùng biên bản này làm<select onchange="A.sbUse(${d.di},this.value)"><option value="tondau" ${d.kind==='tondau'?'selected':''}>Tồn đầu kỳ (cộng vào số đang giữ)</option><option value="kiemke" ${d.kind==='kiemke'?'selected':''}>Kiểm kê để đối chiếu</option></select></label>`:''}
+ <span class="mut">Kế toán: ${esc(d.giver)||'-'} | Tổ trưởng: ${esc(d.witness)||'-'}</span></div>${d.errs.map(e=>`<p class="bad">${esc(e)}</p>`).join('')}
+ <table><tr><th>Loại biên lai</th><th>Quyển</th><th>Từ số</th><th>Đến số</th><th class="n">Số lượng</th><th>Kiểm tra</th></tr>
+ ${d.lines.map((l,li)=>`<tr class="${l.er.length?'err':''}"><td>${esc(tname(l.face,l.label))}</td><td>${esc(l.book)}</td><td><input type="number" style="width:7rem" value="${Number.isFinite(l.a)&&l.a?l.a:''}" onchange="A.sbEdit(${d.di},${li},'a',this.value)"></td>
+ <td><input type="number" style="width:7rem" value="${Number.isFinite(l.b)&&l.b?l.b:''}" onchange="A.sbEdit(${d.di},${li},'b',this.value)"></td><td class="n">${l.loose?vnd(l.qty):l.er.length?'-':vnd(l.b-l.a+1)}</td>
+ <td>${l.loose?'<span class="warn">Ghi theo số lượng, chưa rõ seri còn lại</span>':l.er.length?`<span class="bad">${esc(l.er.join('; '))}</span>`:'<span class="ok">Hợp lệ</span>'}${fix(d,l,li)}</td></tr>`).join('')}</table>`).join('')}
+ <p><button ${nL+nB?'':'disabled'} onclick="A.sbGo()">Nhập ${nL} dòng hợp lệ${nB?`, chuyển ${nB} dòng lỗi sang Chờ làm rõ`:''}</button></p>`}
+function stock(){if(!D.markets.length)return '<h1>Giao nhận biên lai</h1><p class="mut">Chưa có chợ. Tải biên bản từ Excel bên dưới sẽ tự tạo chợ.</p><input type="file" accept=".xlsx" onchange="A.sb(this)">'+(V.sb?sbPanel():'');
+ const F=V.stf=V.stf||{m:'',s:''},m=mk(+(F.m||D.markets[0].id)),calc=stockCalc(m.id,F.asof),staffs=[...new Set(calc.map(x=>x.staff))],view=calc.filter(x=>!F.s||norm(x.staff)===norm(F.s)),docs=D.stock.filter(d=>d.marketId===m.id).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+ const fm=V.sd=V.sd||{kind:'giao',date:'',staff:F.s||'',giver:'',rows:[{t:'',book:'',a:'',b:''}]},faces=[...new Set(D.dens.filter(d=>{const s=src(d.sourceId);return s&&s.marketId===m.id}).map(d=>d.face))].sort((a,b)=>a-b),
+  opts='<option value="">Chọn loại</option>'+faces.map(f=>`<option value="F${f}">Phiếu ${vnd(f)} đồng</option>`).join('')+FIXED.map(x=>`<option value="L${esc(x)}">${esc(x)}</option>`).join('');
+ return `<h1>Giao nhận và tồn biên lai của nhân viên thu</h1><div class="inline"><label>Chợ<select onchange="A.sk('m',this.value)">${D.markets.map(x=>`<option value="${x.id}" ${x.id===m.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+ <label>Tính tồn tại ngày<input type="date" value="${esc(F.asof||'')}" onchange="A.sk('asof',this.value)"></label>
+ <label>Nhân viên thu<select onchange="A.sk('s',this.value)"><option value="">Tất cả</option>${staffs.map(x=>`<option ${norm(x)===norm(F.s)?'selected':''}>${esc(x)}</option>`).join('')}</select></label></div>
+ <h2>Tổng hợp: nhân viên đang giữ bao nhiêu biên lai</h2>${(()=>{const pv=stockPivot(calc);return pv.types.length?`<table><tr><th>Loại biên lai</th>${pv.staffs.map(x=>`<th class="n">${esc(x)}</th>`).join('')}<th class="n">Tổng tồn</th></tr>
+ ${pv.types.map(t=>`<tr><td>${esc(tname(t.face,t.label))}</td>${pv.staffs.map(x=>`<td class="n">${vnd(pv.val(x,t.k))}</td>`).join('')}<td class="n"><b>${vnd(pv.staffs.reduce((a,x)=>a+pv.val(x,t.k),0))}</b></td></tr>`).join('')}</table>`:'<p class="mut">Chưa có dữ liệu. Tải biên bản "chưa quyết toán" làm tồn đầu kỳ ở phần bên dưới.</p>'})()}
+ <h2>Tồn biên lai theo sổ${F.asof?` tại ngày ${F.asof}`:' (đến hiện tại)'}</h2><p class="mut">Tồn theo sổ = đã nhận (tồn đầu kỳ + giao thêm, tính từ <b>ngày ghi trên biên bản</b>) − đã trả − đã dùng. Chỉ trừ các bảng kê của chính nhân viên đó có <b>kỳ thu kết thúc sau ngày nhận</b>; bảng kê có kỳ thu trước ngày nhận được xem là đã phản ánh trong số liệu nhận. Chọn "Tính tồn tại ngày" để xem tồn tại một ngày bất kỳ (để trống = đến hiện tại). Biên lai không có mệnh giá chưa có dữ liệu sử dụng nên chỉ theo dõi nhận, trả và kiểm kê.<br><b>Quyển số</b> được suy ra từ seri: phiếu có mệnh giá 100 số/quyển (ví dụ quyển 35 = 3401-3500), phiếu không mệnh giá 50 số/quyển (ví dụ quyển 73 = 3601-3650). Dòng chữ xanh cho biết còn <b>nguyên</b> những quyển nào và quyển nào đang <b>dở</b> (còn bao nhiêu số, từ số nào đến số nào).</p>
+ <table><tr><th>Nhân viên</th><th>Loại biên lai</th><th class="n">Đã nhận</th><th class="n">Đã trả</th><th class="n">Đã dùng</th><th>Tồn theo sổ (kèm quyển số)</th><th>Kiểm kê gần nhất</th><th>Đối chiếu</th></tr>
+ ${view.map(x=>`<tr><td>${esc(x.staff)}</td><td>${esc(tname(x.face,x.label))}</td><td class="n">${vnd(cntR(x.rec)+x.loose)}</td><td class="n">${vnd(cntR(x.ret))}</td><td class="n">${x.hasUse?vnd(cntR(x.usedIn)):'-'}</td>
+ <td><b>${vnd(x.total)}</b>${x.book.length?`<br><span class="ok">${bookHtml(x.book,x.face,x.label)}</span>`:''}<br><span class="mut">Seri: ${esc(txtR(x.book))}${x.loose?` + ${vnd(x.loose)} chưa rõ seri`:''}</span></td><td>${x.kk?`${x.kk.date}: <b>${vnd(cntR(x.kk.r))}</b>${x.kk.r.length?`<br><span class="ok">${bookHtml(x.kk.r,x.face,x.label)}</span>`:''}<br><span class="mut">Seri: ${esc(txtR(x.kk.r))}</span><br><span class="mut">Sổ tại ngày đó: ${vnd(x.kkBook.total)}</span>`:'<span class="mut">Chưa kiểm kê</span>'}</td>
+ <td>${x.early.length?`<span class="bad">${vnd(cntR(x.early))} số vẫn nằm trong tồn nhưng bảng kê ghi đã thu từ kỳ trước ngày nhận: ${esc(txtR(x.early))}</span><br>`:''}${x.out.length?`<span class="bad">${vnd(cntR(x.out))} số đã dùng nhưng chưa ghi nhận giao: ${esc(txtR(x.out))}</span><br>`:''}${x.kk?(x.gap===0&&!x.diffA.length&&!x.diffB.length?'<span class="ok">Khớp kiểm kê</span>':`<span class="bad">Chênh lệch ${vnd(x.gap)} phiếu</span>${x.diffA.length?`<br><span class="warn">Sổ có, kiểm kê không có: ${esc(txtR(x.diffA))}</span>`:''}${x.diffB.length?`<br><span class="warn">Kiểm kê có, sổ không có: ${esc(txtR(x.diffB))}</span>`:''}`):''}</td></tr>`).join('')||'<tr><td colspan="8" class="mut">Chưa có dữ liệu giao nhận.</td></tr>'}</table>
+ <h2>Ghi nhận giao nhận</h2><div class="inline"><label>Nội dung<select onchange="A.sdSet('kind',this.value)">${Object.entries(KS).map(([k,v])=>`<option value="${k}" ${fm.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
+ <label>Ngày<input type="date" value="${fm.date}" onchange="A.sdSet('date',this.value)"></label><label>Nhân viên thu<input list="stl" value="${esc(fm.staff)}" onchange="A.sdSet('staff',this.value)"><datalist id="stl">${staffs.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+ <label>Người giao (kế toán)<input value="${esc(fm.giver)}" onchange="A.sdSet('giver',this.value)"></label></div>
+ <table><tr><th>Loại biên lai</th><th>Quyển số</th><th>Từ số</th><th>Đến số</th><th class="n">Số lượng</th><th></th></tr>
+ ${fm.rows.map((r,i)=>`<tr><td><select onchange="A.sdRow(${i},'t',this.value)">${opts.replace(`value="${esc(r.t)}"`,`value="${esc(r.t)}" selected`)}</select></td><td><input size="12" value="${esc(r.book)}" onchange="A.sdRow(${i},'book',this.value)"></td>
+ <td><input type="number" min="1" style="width:8rem" value="${esc(r.a)}" onchange="A.sdRow(${i},'a',this.value)"></td><td><input type="number" min="1" style="width:8rem" value="${esc(r.b)}" onchange="A.sdRow(${i},'b',this.value)"></td><td class="n" id="sdq${i}">-</td><td><button class="sec" onclick="A.sdDel(${i})">Xóa</button></td></tr>`).join('')}</table>
+ <p><button class="sec" onclick="A.sdAdd()">Thêm dòng</button> <button onclick="A.sdSave(${m.id})">Lưu biên bản</button> <span class="mut">Muốn nhập tồn đầu kỳ: chọn "Giao biên lai cho nhân viên" với số biên lai đang cầm.</span></p>
+ <h2>Tải biên bản từ Excel</h2><p class="mut">Nhận dạng 2 mẫu: "BẢNG KÊ BÀN GIAO PHIẾU THU" (giao thêm) và "BẢNG KÊ TỔNG HỢP BIÊN LAI CHƯA QUYẾT TOÁN" (kiểm kê tồn).</p><input type="file" accept=".xlsx" onchange="A.sb(this)">${V.sb?sbPanel():''}
+ <h2>Lịch sử giao nhận</h2><table><tr><th>Ngày biên bản</th><th>Số liệu chốt đến hết ngày</th><th>Nội dung</th><th>Nhân viên thu</th><th>Chi tiết</th><th class="n">Số biên lai</th><th>Người ghi</th><th></th></tr>
+ ${docs.map(d=>`<tr style="${d.void?'opacity:.45;text-decoration:line-through':''}"><td>${d.date}</td><td>${d.void?'':`<input type="date" value="${d.eff||d.date}" onchange="A.stEff(${d.id},this.value)">`}</td><td>${KS[d.kind]}${d.file?`<br><span class="mut">${esc(d.file)}${d.late?' (làm rõ sau)':''}</span>`:''}</td><td>${esc(d.staff)}</td><td>${d.lines.map(l=>`${esc(tname(l.face,l.label))}: ${l.loose?vnd(l.qty)+' biên lai (chưa rõ seri, quyển '+l.a+'-'+l.b+')':l.a+'-'+l.b}`).join('<br>')}</td>
+ <td class="n">${vnd(d.lines.reduce((t,l)=>t+l.qty,0))}</td><td>${esc(d.by)}</td><td>${d.void?'Đã hủy':`<button class="sec" onclick="A.voidStock(${d.id})">Hủy</button>`}</td></tr>`).join('')||'<tr><td colspan="8" class="mut">Chưa có biên bản.</td></tr>'}</table>`}
+
+/* ===== Hàng chờ làm rõ: dòng/trang chưa hợp lệ được giữ lại, nhập sau ===== */
+const getDen=(s,face)=>{let d=D.dens.find(x=>x.sourceId===s.id&&x.face===face);if(!d){d={id:nid(),sourceId:s.id,label:'Phiếu '+vnd(face)+' đồng',face};D.dens.push(d)}return d};
+function ensureCtx(mid,mname,sid,sname){let m=mid?mk(mid):D.markets.find(x=>norm(x.name).includes(norm(mname))),nm=0,ns=0;if(!m){m=mkMarket(mname);nm=1}
+ let s=sid?src(sid):D.sources.find(x=>x.marketId===m.id&&norm(x.name)===norm(sname));
+ if(!s){const base=((sname||'NT').split(/\s+/).map(x=>x[0]).join('')||'NT').toUpperCase();let c=base,k=2;while(D.sources.some(x=>x.marketId===m.id&&x.code===c))c=base+k++;s={id:nid(),marketId:m.id,code:c,name:sname||'Nguồn thu',kind:''};D.sources.push(s);ns=1}
+ return{m,s,nm,ns}}
+const pendMarket=it=>it.marketId?mk(it.marketId):(D.markets.find(x=>norm(x.name).includes(norm(it.marketName)))||null);
+function pendStockCheck(it){const e=[],a=int(it.a),b=int(it.b);if(!it.date)e.push('Chưa có ngày biên bản');if(!it.staff.trim())e.push('Thiếu tên nhân viên thu');
+ if(it.loose){if(!(it.qf>0))e.push('Không có số lượng để ghi')}
+ else if(a===null||b===null||a<1)e.push('Số seri không hợp lệ');else if(b<a)e.push(`Số đến (${b}) nhỏ hơn số từ (${a})`);
+ else{if(it.qf!=null&&it.qf!==b-a+1)e.push(`Số lượng ghi ${it.qf} khác số tính từ seri ${b-a+1}`);
+  if(it.kind==='giao'||it.kind==='tondau'){const m=pendMarket(it),h=stockConflict(m?m.id:-1,{face:it.face,label:it.label,a,b});if(h.length)e.push('Trùng dãy đã nhận: '+h.join(', '))}}return e}
+function pendSheetCheck(it){const e=[],m=pendMarket(it),s=m&&(it.sourceId?src(it.sourceId):D.sources.find(x=>x.marketId===m.id&&norm(x.name)===norm(it.sourceName))),mine={};
+ if(!it.from||!it.to||it.to<it.from)e.push('Chưa có kỳ thu hợp lệ');if(!it.collector.trim())e.push('Thiếu người thu');if(!it.lines.length)e.push('Không còn dòng nào');
+ it.lines.forEach(l=>{const a=int(l.a),b=int(l.b);if(a===null||b===null||a<1||b<a){e.push(`Dòng ${l.row}: seri không hợp lệ`);return}const hit=[];
+  if(s)D.sheets.filter(x=>x.sourceId===s.id).forEach(x=>x.lines.forEach(y=>{if(y.face===l.face&&y.a<=b&&a<=y.b)hit.push('bảng kê #'+x.id)}));
+  (mine[l.face]=mine[l.face]||[]).forEach(y=>{if(y[0]<=b&&a<=y[1])hit.push('dòng khác cùng trang')});mine[l.face].push([a,b]);if(hit.length)e.push(`Dòng ${l.row}: seri ${vnd(l.face)}đ ${a}-${b} trùng ${[...new Set(hit)].join(', ')}`)});
+ if(s&&it.from&&D.sheets.some(x=>x.sourceId===s.id&&x.from===it.from&&x.to===it.to))e.push('Đã có bảng kê cùng kỳ thu trong phần mềm, hãy kiểm tra lại ngày');return e}
+Object.assign(A,{
+ pe(id,k,v){const it=D.pending.find(x=>x.id===id);if(it){it[k]=v;save();render()}},
+ pLine(id,li,k,v){const it=D.pending.find(x=>x.id===id);if(it){it.lines[li][k]=v;save();render()}},
+ pLineDel(id,li){if(!need())return;const it=D.pending.find(x=>x.id===id);if(it&&confirm('Bỏ dòng này khỏi bảng kê đang chờ? Dòng bị bỏ sẽ không được nhập.')){it.lines.splice(li,1);log('Bỏ dòng khỏi hàng chờ','#'+id);save();render()}},
+ pFix(id,mode){const it=D.pending.find(x=>x.id===id),a=int(it.a),b=int(it.b),q=it.qf;if(mode==='typo'||mode==='first')it.b=String(a+q-1);else if(mode==='last')it.a=String(b-q+1);else if(mode==='loose')it.loose=true;else if(mode==='unloose')it.loose=false;save();render()},
+ pDel(id){if(!need())return;if(confirm('Xóa mục này khỏi hàng chờ? Dữ liệu sẽ không được nhập.')){D.pending=D.pending.filter(x=>x.id!==id);log('Xóa khỏi hàng chờ','#'+id);save();render()}},
+ pImport(id,quiet){const it=D.pending.find(x=>x.id===id);if(!it||!need())return 0;
+  if(it.type==='stock'){if(pendStockCheck(it).length)return 0;const m=pendMarket(it)||mkMarket(it.marketName),a=int(it.a),b=int(it.b);
+   D.stock.push({id:nid(),kind:it.kind,date:it.date,eff:it.eff,marketId:m.id,staff:it.staff.trim(),giver:it.giver,witness:it.witness,file:it.file,late:true,by:D.op,
+    lines:[{face:it.face,label:it.label,book:it.book,a:a||0,b:b||0,qty:it.loose?it.qf:b-a+1,loose:it.loose||undefined,src:it.file+'#'+it.row}]})}
+  else{if(pendSheetCheck(it).length)return 0;const {m,s}=ensureCtx(it.marketId||0,it.marketName,it.sourceId||0,it.sourceName);
+   D.sheets.push({id:nid(),marketId:m.id,sourceId:s.id,collector:it.collector.trim(),from:it.from,to:it.to,createdBy:D.op,origin:'excel',file:it.file,late:true,sheet:it.name,events:[],
+    lines:it.lines.map(l=>{const a=int(l.a),b=int(l.b);return{denId:getDen(s,l.face).id,face:l.face,book:l.book,a,b,qty:b-a+1,amt:(b-a+1)*l.face}})})}
+  D.pending=D.pending.filter(x=>x.id!==id);log('Nhập từ hàng chờ','#'+id);if(!quiet){save();render()}return 1},
+ pAll(){if(!need())return;let n=0;[...D.pending].forEach(it=>{n+=A.pImport(it.id,true)});save();render();alert(`Đã nhập ${n} mục từ hàng chờ.`)}});
+function pending(){const P=D.pending,ps=P.filter(x=>x.type==='stock'),pw=P.filter(x=>x.type==='sheet'),nOk=P.filter(x=>!(x.type==='stock'?pendStockCheck(x):pendSheetCheck(x)).length).length;
+ if(!P.length)return '<h1>Chờ làm rõ</h1><p class="mut">Không có mục nào đang chờ. Khi tải file Excel, dòng hoặc trang chưa hợp lệ sẽ được giữ ở đây để bạn làm rõ rồi nhập sau.</p>';
+ const bt=(id,m,t)=>`<button class="sec" onclick="A.pFix(${id},'${m}')">${t}</button> `,fix=it=>{if(it.loose)return bt(it.id,'unloose','Bỏ, nhập lại theo seri');if(it.qf==null)return '';const a=int(it.a),b=int(it.b),ok=a!==null&&b!==null&&a>0;let h='';
+  if(ok&&b<a)h+=bt(it.id,'typo',`Đến số = ${a+it.qf-1}`);else if(ok&&it.qf<b-a+1)h+=bt(it.id,'last',`Còn ${it.qf} số cuối`)+bt(it.id,'first',`Còn ${it.qf} số đầu`);return h+bt(it.id,'loose',`Chỉ ghi số lượng ${it.qf}`)};
+ return `<h1>Chờ làm rõ</h1><p>Có <b>${P.length}</b> mục chưa nhập, trong đó <b>${nOk}</b> mục đã hợp lệ. Sửa thông tin hoặc xác minh với thực tế rồi bấm <b>Nhập</b>. Mục chưa hợp lệ thì nút Nhập bị khóa.</p>
+ <p><button ${nOk?'':'disabled'} onclick="A.pAll()">Nhập tất cả ${nOk} mục đã hợp lệ</button></p>
+ ${ps.length?`<h2>Biên lai giao nhận (${ps.length} dòng)</h2><table><tr><th>Nguồn</th><th>Nội dung</th><th>Ngày</th><th>Nhân viên</th><th>Loại biên lai</th><th>Từ số</th><th>Đến số</th><th>Lý do chờ / kiểm tra hiện tại</th><th></th></tr>
+ ${ps.map(it=>{const e=pendStockCheck(it);return `<tr class="${e.length?'err':''}"><td>${esc(it.file)}<br><span class="mut">dòng ${it.row||'?'}</span></td><td>${KS[it.kind]}</td><td><input type="date" value="${it.date}" onchange="A.pe(${it.id},'date',this.value)"></td>
+ <td><input value="${esc(it.staff)}" style="width:9rem" onchange="A.pe(${it.id},'staff',this.value)"></td><td>${esc(tname(it.face,it.label))}${it.book?`<br><span class="mut">quyển ${esc(it.book)}</span>`:''}</td>
+ <td><input type="number" style="width:7rem" value="${esc(it.a)}" ${it.loose?'disabled':''} onchange="A.pe(${it.id},'a',this.value)"></td><td><input type="number" style="width:7rem" value="${esc(it.b)}" ${it.loose?'disabled':''} onchange="A.pe(${it.id},'b',this.value)"></td>
+ <td>${e.length?`<span class="bad">${esc(e.join('; '))}</span>`:it.loose?'<span class="warn">Ghi theo số lượng '+it.qf+', chưa rõ seri</span>':'<span class="ok">Hợp lệ, có thể nhập</span>'}<br><span class="mut">Lúc nhập: ${esc(it.note)}</span><br>${fix(it)}</td>
+ <td><button ${e.length?'disabled':''} onclick="A.pImport(${it.id})">Nhập</button> <button class="sec" onclick="A.pDel(${it.id})">Xóa</button></td></tr>`}).join('')}</table>`:''}
+ ${pw.map(it=>{const e=pendSheetCheck(it);return `<h2>Bảng kê chờ: trang "${esc(it.name)}" (${esc(it.file)})</h2><div class="inline"><label>Từ ngày<input type="date" value="${it.from}" onchange="A.pe(${it.id},'from',this.value)"></label>
+ <label>Đến ngày<input type="date" value="${it.to}" onchange="A.pe(${it.id},'to',this.value)"></label><label>Người thu<input value="${esc(it.collector)}" onchange="A.pe(${it.id},'collector',this.value)"></label></div>
+ <p class="mut">Lúc nhập: ${esc(it.note)}</p>${e.length?`<p class="bad">${esc(e.slice(0,6).join('; '))}${e.length>6?` (và ${e.length-6} lỗi khác)`:''}</p>`:'<p class="ok">Hợp lệ, có thể nhập.</p>'}
+ <table><tr><th>Mệnh giá</th><th>Quyển</th><th>Từ seri</th><th>Đến seri</th><th></th></tr>${it.lines.map((l,li)=>`<tr><td class="n">${vnd(l.face)}</td><td>${esc(l.book)}</td><td><input type="number" style="width:8rem" value="${esc(l.a)}" onchange="A.pLine(${it.id},${li},'a',this.value)"></td>
+ <td><input type="number" style="width:8rem" value="${esc(l.b)}" onchange="A.pLine(${it.id},${li},'b',this.value)"></td><td><button class="sec" onclick="A.pLineDel(${it.id},${li})">Bỏ dòng</button></td></tr>`).join('')}</table>
+ <p><button ${e.length?'disabled':''} onclick="A.pImport(${it.id})">Nhập bảng kê này</button> <button class="sec" onclick="A.pDel(${it.id})">Xóa khỏi hàng chờ</button></p>`}).join('')}`}
+function render(){const v=V.view;document.getElementById('app').innerHTML={home,markets,entry,sheets,sheet,seri,stock,pending,backup,guide}[v]();
+ document.querySelectorAll('header [data-v]').forEach(b=>{if(b.dataset.v==='pending')b.textContent='Chờ làm rõ'+(D.pending.length?` (${D.pending.length})`:'');b.classList.toggle('on',b.dataset.v===(v==='entry'?'markets':v==='sheet'?'sheets':v))});
  if(v==='entry')A.refresh()}
 document.querySelectorAll('header [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
 const op=document.getElementById('op'),bar=document.getElementById('opbar'),omsg=document.getElementById('opmsg');
