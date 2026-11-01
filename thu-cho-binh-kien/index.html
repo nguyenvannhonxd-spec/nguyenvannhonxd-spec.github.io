@@ -25,7 +25,7 @@ details{background:#fff;border:1px solid var(--line);margin-bottom:.5rem;padding
 </style></head><body>
 <header><b>Thu chợ - Bình Kiến (bản chạy thử trên máy)</b>
 <button data-v="home">Tổng quan</button><button data-v="markets">Chợ và nguồn thu</button>
-<button data-v="sheets">Bảng kê</button><button data-v="seri">Theo dõi seri</button><button data-v="stock">Giao nhận biên lai</button><button data-v="pending">Chờ làm rõ</button><button data-v="backup">Sao lưu</button><button data-v="guide">Hướng dẫn</button>
+<button data-v="sheets">Bảng kê</button><button data-v="seri">Theo dõi seri</button><button data-v="stock">Giao nhận biên lai</button><button data-v="pending">Chờ làm rõ</button><button data-v="cloud">Đồng bộ</button><button data-v="backup">Sao lưu</button><button data-v="guide">Hướng dẫn</button> <a id="cloudst" onclick="go('cloud')" style="color:#cfe3e6;font-size:.8rem;text-decoration:none;white-space:nowrap" title=""></a>
 </header>
 <div id="opbar"><label for="op">Người đang thao tác:</label> <input id="op" placeholder="Gõ họ tên của bạn vào đây" autocomplete="off"> <span id="opmsg"></span></div>
 <main id="app"></main>
@@ -35,7 +35,7 @@ const fresh=()=>({pending:[],stock:[],seq:1,op:'',markets:[],sources:[],dens:[],
 let D;try{D=JSON.parse(localStorage.getItem(KEY))||fresh()}catch(e){D=fresh()}
 D.stock=D.stock||[];D.pending=D.pending||[];
 let V={view:'home',mid:null,sid:null,draft:null,fm:''};
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){alert('Trình duyệt không cho lưu dữ liệu. Hãy mở file bằng Chrome hoặc Edge.')}};
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){alert('Trình duyệt không cho lưu dữ liệu. Hãy mở file bằng Chrome hoặc Edge.')}if(typeof Cloud!=='undefined')Cloud.touch()};
 const nid=()=>D.seq++;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const vnd=n=>Number(n).toLocaleString('vi-VN'), int=v=>{v=String(v).trim();return /^\d+$/.test(v)?+v:null};
@@ -382,6 +382,7 @@ function guide(){const g=(t,b,o)=>`<details ${o?'open':''}><summary>${t}</summar
  <li>Với biên lai: có nút gợi ý (còn số cuối, còn số đầu, chỉ ghi số lượng), <b>do bạn chọn</b>, phần mềm không tự quyết.</li>
  <li>Bảng kê chờ: bấm <b>Bỏ dòng</b> nếu dòng đó không đúng; bấm <b>Nhập tất cả … mục đã hợp lệ</b> để nhập cả loạt.</li>
  <li>Mục không cần nữa thì bấm <b>Xóa</b>. Tải lại cùng file thì các dòng đã nhập trước đó được bỏ qua, không bị nhân đôi.</li></ul>`)}
+ ${g('Lưu trực tuyến và dùng nhiều thiết bị',`<p>Vào mục <b>Đồng bộ</b>, làm theo hướng dẫn tạo máy chủ miễn phí (Supabase), dán hai thông tin kết nối, tạo tài khoản. Từ đó mọi thay đổi tự lưu lên máy chủ sau khoảng 2 giây; mở trang trên máy khác, đăng nhập là thấy cùng dữ liệu. Dữ liệu vẫn luôn lưu trên máy nên mất mạng vẫn dùng được và sẽ tự lưu lên khi có mạng.</p><p>Nếu hai máy cùng sửa chưa kịp đồng bộ, phần mềm <b>không tự gộp</b> mà hỏi bạn dùng bản nào. Nên dùng một máy tại một thời điểm và đợi chữ <b>Đã lưu trực tuyến</b> ở góc trên rồi mới chuyển sang máy khác.</p>`)}
  ${g('10. Sao lưu, xuất Excel, khôi phục',`<ul><li>Dữ liệu lưu <b>trong trình duyệt của máy này</b>. Máy khác hoặc trình duyệt khác sẽ không thấy. Xóa dữ liệu duyệt web sẽ mất dữ liệu.</li>
  <li>Vào <b>Sao lưu</b>, bấm <b>Tải file sao lưu (.json)</b> sau mỗi lần nhập nhiều. Nên cất thêm một bản vào USB hoặc đám mây.</li>
  <li><b>Xuất bảng kê ra Excel (.xlsx)</b> file .xlsx đã định dạng sẵn: độ rộng cột, xuống dòng trong ô, đường kẻ, tiêu đề cố định, in A4 ngang vừa chiều rộng trang và lặp tiêu đề mỗi trang.</li>
@@ -665,7 +666,7 @@ function pending(){const P=D.pending,ps=P.filter(x=>x.type==='stock'),pw=P.filte
  <table><tr><th>Mệnh giá</th><th>Quyển</th><th>Từ seri</th><th>Đến seri</th><th></th></tr>${it.lines.map((l,li)=>`<tr><td class="n">${vnd(l.face)}</td><td>${esc(l.book)}</td><td><input type="number" style="width:8rem" value="${esc(l.a)}" onchange="A.pLine(${it.id},${li},'a',this.value)"></td>
  <td><input type="number" style="width:8rem" value="${esc(l.b)}" onchange="A.pLine(${it.id},${li},'b',this.value)"></td><td><button class="sec" onclick="A.pLineDel(${it.id},${li})">Bỏ dòng</button></td></tr>`).join('')}</table>
  <p><button ${e.length?'disabled':''} onclick="A.pImport(${it.id})">Nhập bảng kê này</button> <button class="sec" onclick="A.pDel(${it.id})">Xóa khỏi hàng chờ</button></p>`}).join('')}`}
-function render(){const v=V.view;document.getElementById('app').innerHTML={home,markets,entry,sheets,sheet,seri,stock,pending,backup,guide}[v]();
+function render(){const v=V.view;document.getElementById('app').innerHTML={home,markets,entry,sheets,sheet,seri,stock,pending,backup,guide,cloud}[v]();
  document.querySelectorAll('header [data-v]').forEach(b=>{if(b.dataset.v==='pending')b.textContent='Chờ làm rõ'+(D.pending.length?` (${D.pending.length})`:'');b.classList.toggle('on',b.dataset.v===(v==='entry'?'markets':v==='sheet'?'sheets':v))});
  if(v==='entry')A.refresh()}
 document.querySelectorAll('header [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
@@ -673,4 +674,98 @@ const op=document.getElementById('op'),bar=document.getElementById('opbar'),omsg
 const opState=()=>{bar.classList.toggle('empty',!D.op.trim());omsg.textContent=D.op.trim()?'Mọi thao tác bên dưới sẽ ghi tên này. Đổi người sử dụng thì sửa tên ở đây.':'Chưa có tên: các nút thêm và lưu chưa hoạt động.'};
 op.value=D.op||'';op.oninput=()=>{D.op=op.value;save();opState();const eo=document.getElementById('evop');if(eo)eo.textContent=D.op.trim()||'(chưa nhập)'};opState();
 render();
+/* ===== Lưu trực tuyến (Supabase): đồng bộ dữ liệu giữa các thiết bị ===== */
+const CK='thuChoBinhKien_cloud';
+const Cloud=(()=>{
+ let C={};try{C=JSON.parse(localStorage.getItem(CK))||{}}catch(e){C={}}
+ let st='ok',msg='',timer=null,busy=false,conflict=null,chg=0;
+ const persist=()=>{try{localStorage.setItem(CK,JSON.stringify(C))}catch(e){}};
+ const ready=()=>!!(C.url&&C.anon),logged=()=>!!(C.sess&&C.sess.access_token);
+ const base=()=>C.url.replace(/\/+$/,'');
+ const state=()=>!ready()?'off':!logged()?'idle':st;
+ const LB={off:'☁ Chưa kết nối',idle:'☁ Chưa đăng nhập',ok:'☁ Đã lưu trực tuyến',sync:'☁ Đang đồng bộ...',dirty:'☁ Chờ lưu...',err:'☁ Lỗi đồng bộ',conflict:'☁ Cần chọn bản dữ liệu',offline:'☁ Chưa có mạng'};
+ const ui=()=>{const e=document.getElementById('cloudst');if(e){e.textContent=LB[state()];e.title=msg}if(V.view==='cloud')render()};
+ const setS=(s,m)=>{st=s;msg=m||'';ui()};
+ const isEmpty=d=>!(d.markets.length||d.sheets.length||d.stock.length||d.pending.length);
+ async function errText(r){try{const j=await r.json();return j.message||j.msg||j.error_description||('Lỗi '+r.status)}catch(e){return 'Lỗi '+r.status}}
+ async function refresh(){try{const r=await fetch(base()+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:C.anon,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:C.sess.refresh_token})});if(!r.ok)return false;const j=await r.json();if(!j.access_token)return false;C.sess.access_token=j.access_token;if(j.refresh_token)C.sess.refresh_token=j.refresh_token;persist();return true}catch(e){return false}}
+ async function api(path,opt={},retry=true){const h=Object.assign({apikey:C.anon,'Content-Type':'application/json',Authorization:'Bearer '+C.sess.access_token},opt.headers||{});
+  const r=await fetch(base()+path,Object.assign({},opt,{headers:h}));
+  if(r.status===401&&retry&&C.sess.refresh_token){if(await refresh())return api(path,opt,false);C.sess=null;persist();throw new Error('Phiên đăng nhập đã hết hạn, hãy đăng nhập lại')}
+  return r}
+ async function fetchRow(){const r=await api(`/rest/v1/app_data?select=rev,data,updated_at&user_id=eq.${C.sess.user.id}`);if(!r.ok)throw new Error(await errText(r));const j=await r.json();return j[0]||null}
+ async function pushWith(row,chg0){const snap=JSON.stringify(D),uid=C.sess.user.id;let r;
+  if(!row)r=await api('/rest/v1/app_data',{method:'POST',headers:{Prefer:'return=representation'},body:`{"user_id":${JSON.stringify(uid)},"rev":1,"data":${snap}}`});
+  else r=await api(`/rest/v1/app_data?user_id=eq.${uid}&rev=eq.${row.rev}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:`{"rev":${row.rev+1},"updated_at":${JSON.stringify(new Date().toISOString())},"data":${snap}}`});
+  if(r.status===409)return 'conflict';if(!r.ok)throw new Error(await errText(r));
+  const j=await r.json();if(!Array.isArray(j)||!j.length)return 'conflict';
+  C.rev=j[0].rev;C.syncAt=new Date().toISOString();C.dirty=(chg!==chg0);persist();return 'ok'}
+ function applyCloud(row){if(!row.data||!Array.isArray(row.data.markets)||!Array.isArray(row.data.sheets))throw new Error('Dữ liệu trên máy chủ không đúng định dạng');
+  try{localStorage.setItem(KEY+'_truoc_dong_bo',JSON.stringify(D))}catch(e){}
+  const op0=D.op;D=Object.assign(fresh(),row.data);D.op=op0;D.stock=D.stock||[];D.pending=D.pending||[];
+  try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){}
+  C.rev=row.rev;C.dirty=false;C.syncAt=new Date().toISOString();persist();conflict=null;V.draft=null;st='ok';msg='';render();ui()}
+ async function sync(force){clearTimeout(timer);if(!ready()||!logged()||busy)return;if(conflict&&!force)return;
+  if(typeof navigator!=='undefined'&&navigator.onLine===false){setS('offline');return}
+  busy=true;setS('sync');const chg0=chg;
+  try{const row=await fetchRow();
+   if(!row){const x=await pushWith(null,chg0);if(x==='ok')setS('ok');else throw new Error('Không tạo được dữ liệu trên máy chủ')}
+   else if(C.rev==null){if(isEmpty(D))applyCloud(row);else{conflict={row,why:'first'};setS('conflict')}}
+   else if(row.rev===C.rev){if(C.dirty){const x=await pushWith(row,chg0);if(x==='ok')setS('ok');else{conflict={row:await fetchRow(),why:'race'};setS('conflict')}}else setS('ok')}
+   else{if(!C.dirty)applyCloud(row);else{conflict={row,why:'both'};setS('conflict')}}
+  }catch(e){setS('err',e.message||String(e))}finally{busy=false;if(C.dirty&&!conflict&&st!=='err')timer=setTimeout(sync,2500)}}
+ const api2={
+  touch(){if(!logged())return;chg++;C.dirty=true;persist();if(!conflict){if(st!=='err')st='dirty';const e=document.getElementById('cloudst');if(e)e.textContent=LB[state()];clearTimeout(timer);timer=setTimeout(sync,2500)}},
+  sync,ui,state,
+  info:()=>({ready:ready(),logged:logged(),email:logged()?C.sess.user.email:'',st:state(),msg,conflict,syncAt:C.syncAt||'',rev:C.rev,dirty:!!C.dirty,url:C.url||''}),
+  cfgSave(f){const u=f.url.value.trim(),k=f.key.value.trim();if(!/^https:\/\/[^\s/]+/.test(u)||k.length<20){alert('Nhập đúng Project URL (bắt đầu bằng https://) và khóa anon/publishable key');return false}
+   C={url:u,anon:k};persist();ui();render();return false},
+  async auth(f,mode){const em=f.email.value.trim(),pw=f.pw.value;if(!em||pw.length<6){alert('Nhập email và mật khẩu (tối thiểu 6 ký tự)');return false}
+   try{setS('sync','Đang đăng nhập...');const r=await fetch(base()+(mode==='up'?'/auth/v1/signup':'/auth/v1/token?grant_type=password'),{method:'POST',headers:{apikey:C.anon,'Content-Type':'application/json'},body:JSON.stringify({email:em,password:pw})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){const m=j.msg||j.error_description||j.message||('Lỗi '+r.status);throw new Error(/invalid login/i.test(m)?'Sai email hoặc mật khẩu':/already|registered/i.test(m)?'Email này đã có tài khoản, hãy bấm Đăng nhập':/signups? not allowed|disabled/i.test(m)?'Supabase đang tắt việc tạo tài khoản mới':m)}
+    if(!j.access_token){st='ok';alert('Đã tạo tài khoản nhưng Supabase đang yêu cầu xác nhận email. Mở email, bấm liên kết xác nhận rồi quay lại bấm Đăng nhập (hoặc tắt "Confirm email" trong Authentication > Sign In / Providers > Email).');ui();return false}
+    if(C.sess&&C.sess.user&&C.sess.user.id!==j.user.id){C.rev=null;C.dirty=false}
+    C.sess={access_token:j.access_token,refresh_token:j.refresh_token,user:{id:j.user.id,email:j.user.email||em}};persist();st='ok';msg='';ui();render();await sync(true)
+   }catch(e){setS('err',e.message||String(e));alert(e.message||String(e));st='ok';ui()}return false},
+  logout(){if(!confirm('Đăng xuất khỏi tài khoản trực tuyến? Dữ liệu trên máy này vẫn còn.'))return;clearTimeout(timer);C.sess=null;conflict=null;persist();st='ok';ui();render()},
+  reset(){if(!confirm('Ngắt kết nối và xóa cấu hình máy chủ trên thiết bị này? Dữ liệu trên máy và trên máy chủ không bị xóa.'))return;clearTimeout(timer);C={};conflict=null;persist();st='ok';ui();render()},
+  useCloud(){if(!conflict)return;if(!confirm('Thay dữ liệu trên máy này bằng bản trên máy chủ? Bản hiện tại trên máy được giữ lại một bản dự phòng trong trình duyệt.'))return;try{applyCloud(conflict.row)}catch(e){setS('err',e.message)}},
+  async useLocal(){if(!conflict)return;if(!confirm('Ghi đè bản trên máy chủ bằng dữ liệu của máy này?'))return;busy=true;setS('sync');const chg0=chg;
+   try{const row=await fetchRow(),x=await pushWith(row,chg0);if(x==='ok'){conflict=null;setS('ok')}else{conflict={row:await fetchRow(),why:'race'};setS('conflict');alert('Máy chủ vừa có thay đổi mới, hãy chọn lại')}}catch(e){setS('err',e.message||String(e))}finally{busy=false}},
+ };
+ window.addEventListener('online',()=>{if(logged())sync()});
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&logged())sync()});
+ setTimeout(()=>{ui();if(logged())sync()},300);
+ return api2})();
+const SQL_CLOUD=`create table if not exists public.app_data (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  rev bigint not null default 1,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_data enable row level security;
+drop policy if exists "chi chu so huu" on public.app_data;
+create policy "chi chu so huu" on public.app_data for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);`;
+const fdt=iso=>iso?new Date(iso).toLocaleString('vi-VN'):'-';
+function cloud(){const i=Cloud.info();
+ const cnt=d=>d&&d.sheets?`${d.sheets.length} bảng kê, ${(d.stock||[]).length} biên bản giao nhận`:'không rõ';
+ let h=`<h1>Lưu trực tuyến và dùng nhiều thiết bị</h1><p class="mut">Dữ liệu vẫn lưu trên máy này như cũ. Khi kết nối, mỗi thay đổi còn được tự động lưu lên máy chủ riêng của bạn (Supabase) để mở trên điện thoại hay máy tính khác đều thấy cùng một dữ liệu. Chỉ tài khoản của bạn đọc và sửa được.</p>`;
+ if(!i.ready)h+=`<h2>Bước 1: kết nối máy chủ</h2><p>Làm theo phần <b>Cách tạo máy chủ</b> bên dưới, rồi dán hai thông tin vào đây.</p><form class="inline" onsubmit="return Cloud.cfgSave(this)"><label>Project URL<input name="url" style="width:22rem" placeholder="https://xxxx.supabase.co" autocomplete="off"></label><label>Khóa anon / publishable key<input name="key" style="width:22rem" autocomplete="off"></label><button>Lưu kết nối</button></form>`;
+ else if(!i.logged)h+=`<h2>Bước 2: đăng nhập</h2><p class="mut">Máy chủ: ${esc(i.url)}</p><form id="cf" class="inline" onsubmit="return Cloud.auth(this,'in')"><label>Email<input name="email" type="email" autocomplete="username"></label><label>Mật khẩu<input name="pw" type="password" autocomplete="current-password"></label><button>Đăng nhập</button><button type="button" class="sec" onclick="Cloud.auth(document.getElementById('cf'),'up')">Tạo tài khoản mới (lần đầu)</button></form><p><button class="sec" onclick="Cloud.reset()">Đổi máy chủ</button></p>${i.msg?`<p class="bad">${esc(i.msg)}</p>`:''}`;
+ else{const S={ok:'<span class="ok">Đã lưu trực tuyến</span>',sync:'<span class="warn">Đang đồng bộ...</span>',dirty:'<span class="warn">Có thay đổi, sắp lưu lên máy chủ</span>',err:'<span class="bad">Lỗi đồng bộ</span>',conflict:'<span class="bad">Cần chọn bản dữ liệu</span>',offline:'<span class="warn">Chưa có mạng, sẽ lưu khi có mạng</span>'};
+  h+=`<table><tr><td>Tài khoản</td><td>${esc(i.email)}</td></tr><tr><td>Tình trạng</td><td>${S[i.st]||esc(i.st)}${i.msg?`<br><span class="bad">${esc(i.msg)}</span>`:''}</td></tr><tr><td>Đồng bộ gần nhất</td><td>${fdt(i.syncAt)}</td></tr></table><p><button onclick="Cloud.sync(true)">Đồng bộ ngay</button> <button class="sec" onclick="Cloud.logout()">Đăng xuất</button> <button class="sec" onclick="Cloud.reset()">Ngắt kết nối</button></p>`;
+  if(i.conflict){const c=i.conflict;h+=`<div class="note"><b>Dữ liệu trên máy này và trên máy chủ khác nhau, cần bạn chọn.</b><br>${c.why==='first'?'Máy này chưa từng đồng bộ nhưng đã có dữ liệu, trong khi máy chủ cũng đã có dữ liệu.':'Cả máy này và máy chủ đều có thay đổi mới mà chưa gộp được.'}<br>Trên máy này: ${cnt(D)}.<br>Trên máy chủ (cập nhật ${fdt(c.row.updated_at)}): ${cnt(c.row.data)}.<p><button onclick="Cloud.useCloud()">Dùng dữ liệu máy chủ (bỏ dữ liệu trên máy này)</button> <button class="sec" onclick="Cloud.useLocal()">Dùng dữ liệu máy này (ghi đè máy chủ)</button></p><span class="mut">Phần mềm không tự gộp để tránh mất số liệu tiền. Hãy tải file sao lưu ở mục Sao lưu trước nếu chưa chắc chắn.</span></div>`}}
+ h+=`<details ${i.ready?'':'open'}><summary>Cách tạo máy chủ miễn phí (làm một lần, khoảng 10 phút, nên dùng máy tính)</summary><ol>
+<li>Vào <b>supabase.com</b>, đăng ký (có thể dùng tài khoản GitHub hoặc Google), bấm <b>New project</b>, chọn vùng gần (ví dụ Singapore), đặt mật khẩu cơ sở dữ liệu, chờ khoảng 2 phút.</li>
+<li>Vào <b>SQL Editor</b> > <b>New query</b>, dán đoạn lệnh dưới đây rồi bấm <b>Run</b>. Lệnh tạo một bảng và khóa lại để mỗi tài khoản chỉ đọc, sửa dữ liệu của chính mình.</li>
+<li>Vào <b>Authentication</b> > <b>Sign In / Providers</b> > <b>Email</b>, tắt <b>Confirm email</b> (để tạo tài khoản dùng được ngay).</li>
+<li>Vào <b>Project Settings</b> > <b>API</b> (hoặc <b>API Keys</b>), chép <b>Project URL</b> và khóa <b>anon / publishable</b>, dán vào ô ở đầu trang này. <b>Không dùng</b> khóa service_role hay secret.</li>
+<li>Bấm <b>Tạo tài khoản mới</b> với email và mật khẩu của bạn (mật khẩu riêng, không trùng mật khẩu khác).</li>
+<li>Quay lại Supabase, vào <b>Authentication</b> > <b>Sign In / Providers</b> và tắt <b>Allow new users to sign up</b> để không ai khác tạo được tài khoản.</li>
+<li>Trên điện thoại hay máy khác, mở lại trang này, dán cùng hai thông tin ở bước 4 rồi đăng nhập là thấy dữ liệu.</li></ol>
+<pre id="sqlc" style="background:#f4f6f7;border:1px solid var(--line);padding:.6rem;overflow:auto">${esc(SQL_CLOUD)}</pre><p><button class="sec" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('sqlc').textContent).then(()=>alert('Đã chép lệnh SQL'))">Chép lệnh SQL</button></p>
+<p class="mut">Lưu ý: khóa anon/publishable nằm trong trang web là bình thường, dữ liệu được bảo vệ bằng đăng nhập và quy tắc ở lệnh SQL. Gói miễn phí của Supabase tự tạm dừng dự án sau khoảng 1 tuần không có ai dùng; vào bảng điều khiển bấm khôi phục là chạy lại, dữ liệu không mất. Dữ liệu cũng vẫn nằm trên máy bạn và nên tải file sao lưu định kỳ ở mục Sao lưu.</p></details>`;
+ return h}
 </script></body></html>
